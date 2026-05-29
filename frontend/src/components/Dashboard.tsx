@@ -67,6 +67,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deviceToDelete, setDeviceToDelete] = useState<string | null>(null);
   const [deletingDevice, setDeletingDevice] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // تحميل الأجهزة
   const fetchDevices = async () => {
@@ -230,6 +231,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
   // إلغاء ربط وحذف الجهاز من حساب المستخدم
   const handleDeleteDevice = (devId: string) => {
     setDeviceToDelete(devId);
+    setDeleteError(null);
     setShowDeleteConfirm(true);
   };
 
@@ -237,21 +239,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
   const confirmDeleteDevice = async () => {
     if (!deviceToDelete) return;
     setDeletingDevice(true);
+    setDeleteError(null);
     try {
-      const res = await fetch(`${API_URL}/api/devices/${deviceToDelete}`, {
+      const res = await fetch(`${API_URL}/api/devices/${encodeURIComponent(deviceToDelete)}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
         setSelectedDeviceId(null);
         await fetchDevices();
+        setShowDeleteConfirm(false);
+        setDeviceToDelete(null);
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        setDeleteError(errorData.error || `فشل الحذف بكود الاستجابة: ${res.status}`);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setDeleteError(`خطأ في الشبكة أو الاتصال: ${err.message || err}`);
     } finally {
       setDeletingDevice(false);
-      setShowDeleteConfirm(false);
-      setDeviceToDelete(null);
     }
   };
 
@@ -604,6 +611,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
             <p className="text-sm text-slate-300 leading-relaxed">
               هل أنت متأكد من رغبتك في حذف وإلغاء ربط هذا الجهاز من حسابك؟ سيتم مسح جميع الجداول والجدولة الزمنية المرتبطة به فوراً.
             </p>
+
+            {deleteError && (
+              <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-xs font-semibold leading-relaxed">
+                {deleteError}
+              </div>
+            )}
 
             <div className="flex gap-3 mt-2">
               <button
