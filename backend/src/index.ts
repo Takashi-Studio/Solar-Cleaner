@@ -233,6 +233,32 @@ app.delete('/api/devices/:id', authenticateToken, async (req: AuthenticatedReque
   }
 });
 
+// مسار بديل بالـ POST لزيادة التوافقية مع جدران الحماية والبروكسي التي تمنع الـ DELETE
+app.post('/api/devices/:id/delete', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  console.log(`[POST Delete Device] Request received for id: "${id}", user_id: ${req.userId}`);
+  try {
+    const dev = await db.get('SELECT * FROM devices WHERE id = ?', [id]);
+    console.log(`[POST Delete Device] DB lookup result:`, dev);
+
+    if (!dev) {
+      return res.status(404).json({ error: 'الجهاز غير مسجل في قاعدة البيانات إطلاقاً.' });
+    }
+
+    if (dev.user_id !== req.userId) {
+      return res.status(403).json({ error: `الجهاز ينتمي لمستخدم آخر (معرف المالك الحالي: ${dev.user_id}، معرفك أنت: ${req.userId})` });
+    }
+
+    await db.run('UPDATE devices SET user_id = NULL, status = ? WHERE id = ?', ['offline', id]);
+    await db.run('DELETE FROM schedules WHERE device_id = ?', [id]);
+
+    res.json({ success: true, message: 'Device unlinked successfully.' });
+  } catch (err) {
+    console.error('[POST Delete Device] Error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
 // مسار التحقق اليدوي والفوري من حالة اتصال الجهاز بالشبكة
 app.post('/api/devices/:id/check-connection', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;

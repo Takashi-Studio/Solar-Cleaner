@@ -245,8 +245,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
     setDeletingDevice(true);
     setDeleteError(null);
     try {
-      const res = await fetch(`${API_URL}/api/devices/${encodeURIComponent(deviceToDelete)}`, {
-        method: 'DELETE',
+      const res = await fetch(`${API_URL}/api/devices/${encodeURIComponent(deviceToDelete)}/delete`, {
+        method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
