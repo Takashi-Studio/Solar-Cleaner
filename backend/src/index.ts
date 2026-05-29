@@ -206,9 +206,19 @@ app.get('/api/devices', authenticateToken, async (req: AuthenticatedRequest, res
 // مسار إلغاء ربط وحذف الجهاز من حساب المستخدم
 app.delete('/api/devices/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
+  console.log(`[DELETE Device] Request received for id: "${id}", user_id: ${req.userId}`);
   try {
-    const dev = await db.get('SELECT * FROM devices WHERE id = ? AND user_id = ?', [id, req.userId]);
-    if (!dev) return res.status(404).json({ error: 'Device not found.' });
+    // جلب معلومات الجهاز للتأكد من وجوده ولمن ينتمي (للتشخيص المفصل)
+    const dev = await db.get('SELECT * FROM devices WHERE id = ?', [id]);
+    console.log(`[DELETE Device] DB lookup result:`, dev);
+
+    if (!dev) {
+      return res.status(404).json({ error: 'الجهاز غير مسجل في قاعدة البيانات إطلاقاً.' });
+    }
+
+    if (dev.user_id !== req.userId) {
+      return res.status(403).json({ error: `الجهاز ينتمي لمستخدم آخر (معرف المالك الحالي: ${dev.user_id}، معرفك أنت: ${req.userId})` });
+    }
 
     // إلغاء ربط الجهاز (تعيين user_id = NULL)
     await db.run('UPDATE devices SET user_id = NULL, status = ? WHERE id = ?', ['offline', id]);
@@ -217,6 +227,43 @@ app.delete('/api/devices/:id', authenticateToken, async (req: AuthenticatedReque
     await db.run('DELETE FROM schedules WHERE device_id = ?', [id]);
 
     res.json({ success: true, message: 'Device unlinked successfully.' });
+  } catch (err) {
+    console.error('[DELETE Device] Error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// مسار التحقق اليدوي والفوري من حالة اتصال الجهاز بالشبكة
+app.post('/api/devices/:id/check-connection', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  try {
+    const dev = await db.get('SELECT * FROM devices WHERE id = ? AND user_id = ?', [id, req.userId]);
+    if (!dev) return res.status(404).json({ error: 'Device not found.' });
+
+    // حساب فرق التوقيت بين آخر ظهور للتأكد من النشاط الفعلي
+    const lastSeenTime = new Date(dev.last_seen).getTime();
+    const now = Date.now();
+    const diffSeconds = Math.round((now - lastSeenTime) / 1000);
+    
+    // نعتبره غير متصل إذا مرت أكثر من 15 ثانية على آخر إشارة
+    const isOffline = diffSeconds > 15;
+
+    let newStatus = dev.status;
+    if (isOffline && dev.status !== 'offline') {
+      newStatus = 'offline';
+      await db.run('UPDATE devices SET status = ? WHERE id = ?', ['offline', id]);
+    } else if (!isOffline && dev.status !== 'online') {
+      newStatus = 'online';
+      await db.run('UPDATE devices SET status = ? WHERE id = ?', ['online', id]);
+    }
+
+    res.json({ 
+      success: true,
+      id, 
+      status: newStatus, 
+      last_seen: dev.last_seen,
+      seconds_since_last_seen: diffSeconds
+    });
   } catch (err) {
     res.status(500).json({ error: 'Database error' });
   }

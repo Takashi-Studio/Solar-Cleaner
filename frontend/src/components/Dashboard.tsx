@@ -69,6 +69,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
   const [deletingDevice, setDeletingDevice] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  // للتحقق اليدوي من اتصال الجهاز
+  const [checkingConnection, setCheckingConnection] = useState(false);
+  const [connectionMessage, setConnectionMessage] = useState<{ text: string; isError: boolean } | null>(null);
+
   // تحميل الأجهزة
   const fetchDevices = async () => {
     try {
@@ -262,6 +266,47 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
     }
   };
 
+  // التحقق الفوري واليدوي من اتصال الجهاز بالشبكة
+  const handleCheckConnection = async () => {
+    if (!selectedDevice) return;
+    setCheckingConnection(true);
+    setConnectionMessage(null);
+    try {
+      const res = await fetch(`${API_URL}/api/devices/${encodeURIComponent(selectedDevice.id)}/check-connection`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        // تحديث حالة الأجهزة محلياً لتظهر النتيجة
+        await fetchDevices();
+        
+        if (data.status === 'online') {
+          setConnectionMessage({ 
+            text: `متصل! الجهاز نشط وتم استقبال إشارة منه قبل ${data.seconds_since_last_seen} ثانية.`, 
+            isError: false 
+          });
+        } else {
+          setConnectionMessage({ 
+            text: `غير متصل! آخر إشارة مسجلة كانت قبل ${data.seconds_since_last_seen} ثانية.`, 
+            isError: true 
+          });
+        }
+      } else {
+        setConnectionMessage({ text: data.error || 'فشل فحص الاتصال.', isError: true });
+      }
+    } catch (err: any) {
+      console.error(err);
+      setConnectionMessage({ text: 'حدث خطأ بالاتصال مع السيرفر.', isError: true });
+    } finally {
+      setCheckingConnection(false);
+      // إخفاء الرسالة تلقائياً بعد 6 ثوانٍ
+      setTimeout(() => {
+        setConnectionMessage(null);
+      }, 6000);
+    }
+  };
+
   // تبديل أيام الأسبوع لتسجيل الجدولة
   const toggleDay = (dayIndex: number) => {
     if (selectedDays.includes(dayIndex)) {
@@ -428,6 +473,36 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
                       <div className="text-xs text-slate-500">اسم الجهاز: <span className="text-white font-semibold">{selectedDevice.name}</span></div>
                       <div className="text-xs text-slate-500">المعرف: <code className="text-cyan-400 font-bold bg-slate-900 px-2 py-0.5 rounded">{selectedDevice.id}</code></div>
                       <div className="text-xs text-slate-500 flex items-center gap-1.5">الحالة الحالية: {getStateBadge(selectedDevice.state)}</div>
+                    </div>
+
+                    <div className="mt-4">
+                      <button
+                        onClick={handleCheckConnection}
+                        disabled={checkingConnection}
+                        className="w-full py-2 bg-slate-900/60 hover:bg-slate-900 disabled:opacity-40 text-slate-300 font-bold rounded-xl text-[10px] flex items-center justify-center gap-1.5 border border-slate-800 transition-all active:scale-95"
+                      >
+                        {checkingConnection ? (
+                          <>
+                            <Loader2 size={12} className="animate-spin" />
+                            <span>جاري فحص الاتصال بالخادم...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Cpu size={12} />
+                            <span>التحقق من اتصال الجهاز الآن</span>
+                          </>
+                        )}
+                      </button>
+
+                      {connectionMessage && (
+                        <div className={`mt-2 p-2 rounded-lg text-[10px] font-bold leading-relaxed border ${
+                          connectionMessage.isError 
+                            ? 'bg-red-500/10 border-red-500/20 text-red-400' 
+                            : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                        }`}>
+                          {connectionMessage.text}
+                        </div>
+                      )}
                     </div>
                   </div>
 
