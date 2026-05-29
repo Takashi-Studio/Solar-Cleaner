@@ -25,7 +25,7 @@ services:
       - JWT_SECRET=super_secret_jwt_token_solar_panels_cleaning_saas
       - MQTT_BROKER_URL=mqtt://mqtt-broker:1883
     volumes:
-      - sqlite-data:/app/data
+      - sqlite-db-data:/app/data
     depends_on:
       - mqtt-broker
     restart: always
@@ -43,4 +43,4 @@ services:
     restart: always
 
 volumes:
-  sqlite-data:
+  sqlite-db-data:
