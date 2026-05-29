@@ -36,8 +36,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: solar-frontend
-    ports:
-      - "8080:80"
+    expose:
+      - "80"
     depends_on:
       - backend
     restart: always
