@@ -60,6 +60,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
   // سجلات التنظيف
   const [logs, setLogs] = useState<CleaningLog[]>([]);
 
+  // لتأكيد الحذف المخصص (Modal)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deviceToDelete, setDeviceToDelete] = useState<string | null>(null);
+  const [deletingDevice, setDeletingDevice] = useState(false);
+
   // تحميل الأجهزة
   const fetchDevices = async () => {
     try {
@@ -76,8 +81,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
           } else {
             // تحديث حالة الجهاز المختار الحالي بالبيانات الجديدة
             const updated = data.find((d: Device) => d.id === selectedDevice.id);
-            if (updated) setSelectedDevice(updated);
+            if (updated) {
+              setSelectedDevice(updated);
+            } else {
+              // إذا لم نجد الجهاز المختار الحالي (لأنه حُذف مثلاً)، نختار الأول
+              setSelectedDevice(data[0]);
+            }
           }
+        } else {
+          setSelectedDevice(null);
         }
       }
     } catch (err) {
@@ -219,19 +231,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
   };
 
   // إلغاء ربط وحذف الجهاز من حساب المستخدم
-  const handleDeleteDevice = async (devId: string) => {
-    if (!window.confirm('هل أنت متأكد من رغبتك في حذف وإلغاء ربط هذا الجهاز من حسابك؟')) return;
+  const handleDeleteDevice = (devId: string) => {
+    setDeviceToDelete(devId);
+    setShowDeleteConfirm(true);
+  };
+
+  // تأكيد حذف وإلغاء ربط الجهاز عبر الـ API
+  const confirmDeleteDevice = async () => {
+    if (!deviceToDelete) return;
+    setDeletingDevice(true);
     try {
-      const res = await fetch(`${API_URL}/api/devices/${devId}`, {
+      const res = await fetch(`${API_URL}/api/devices/${deviceToDelete}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
         setSelectedDevice(null);
-        fetchDevices();
+        await fetchDevices();
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setDeletingDevice(false);
+      setShowDeleteConfirm(false);
+      setDeviceToDelete(null);
     }
   };
 
@@ -566,6 +589,55 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
         </section>
 
       </main>
+
+      {/* نافذة تأكيد الحذف المنبثقة (In-app Custom Modal) */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="glass-panel max-w-sm w-full p-6 mx-4 rounded-2xl border border-red-500/20 shadow-2xl flex flex-col gap-4 text-right animate-fade-in">
+            <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
+              <div className="p-2 bg-red-500/10 text-red-400 rounded-xl">
+                <AlertTriangle size={24} className="animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">تأكيد حذف الجهاز</h3>
+                <p className="text-[10px] text-slate-400">إجراء غير قابل للتراجع</p>
+              </div>
+            </div>
+            
+            <p className="text-sm text-slate-300 leading-relaxed">
+              هل أنت متأكد من رغبتك في حذف وإلغاء ربط هذا الجهاز من حسابك؟ سيتم مسح جميع الجداول والجدولة الزمنية المرتبطة به فوراً.
+            </p>
+
+            <div className="flex gap-3 mt-2">
+              <button
+                onClick={confirmDeleteDevice}
+                disabled={deletingDevice}
+                className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-lg shadow-red-600/10"
+              >
+                {deletingDevice ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>جاري الحذف...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    <span>تأكيد الحذف</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={() => { setShowDeleteConfirm(false); setDeviceToDelete(null); }}
+                disabled={deletingDevice}
+                className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-slate-300 font-bold rounded-xl text-xs border border-slate-800 transition-all text-center"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
