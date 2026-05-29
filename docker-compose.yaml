@@ -3,13 +3,12 @@ version: '3.8'
 services:
   # 1. وسيط الـ MQTT (Mosquitto)
   mqtt-broker:
-    image: eclipse-mosquitto:latest
+    build:
+      context: ./mosquitto-config
+      dockerfile: Dockerfile
     container_name: solar-mqtt-broker
-    user: "0:0"
     ports:
       - "1883:1883"
-    volumes:
-      - ./mosquitto-config:/mosquitto/config
     restart: always
 
   # 2. خادم الـ Backend (Node.js + SQLite)
