@@ -189,8 +189,9 @@ app.post('/api/devices/register', authenticateToken, async (req: AuthenticatedRe
       );
     }
     res.json({ success: true, message: 'Device registered successfully.' });
-  } catch (err) {
-    res.status(500).json({ error: 'Database error' });
+  } catch (err: any) {
+    console.error('[Device Register] Error:', err);
+    res.status(500).json({ error: `خطأ بقاعدة البيانات: ${err.message || err}` });
   }
 });
 
