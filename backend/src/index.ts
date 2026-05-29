@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import mqtt from 'mqtt';
 import cron from 'node-cron';
-import { db, initializeDatabase } from './db';
+import { prisma, initializeDatabase } from './db';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -38,38 +38,21 @@ mqttClient.on('message', async (topic, message) => {
 
     // تحديث قاعدة البيانات بناءً على الرسالة الواردة
     const { water_level, state, status } = payload;
-    const now = new Date().toISOString();
 
     // جلب الحالة الحالية للجهاز قبل التحديث
-    const prevDevice = await db.get('SELECT state, water_level FROM devices WHERE id = ?', [devId]);
+    const prevDevice = await prisma.device.findUnique({
+      where: { id: devId }
+    });
 
-    let updateFields: string[] = [];
-    let queryParams: any[] = [];
+    let updateData: any = { last_seen: new Date() };
+    if (status) updateData.status = status;
+    if (water_level !== undefined) updateData.water_level = water_level;
+    if (state !== undefined) updateData.state = state;
 
-    if (status) {
-      updateFields.push('status = ?');
-      queryParams.push(status);
-    }
-    if (water_level !== undefined) {
-      updateFields.push('water_level = ?');
-      queryParams.push(water_level);
-    }
-    if (state !== undefined) {
-      updateFields.push('state = ?');
-      queryParams.push(state);
-    }
-
-    updateFields.push('last_seen = ?');
-    queryParams.push(now);
-
-    queryParams.push(devId); // للـ WHERE clause
-
-    if (updateFields.length > 0) {
-      await db.run(
-        `UPDATE devices SET ${updateFields.join(', ')} WHERE id = ?`,
-        ...queryParams
-      );
-    }
+    await prisma.device.update({
+      where: { id: devId },
+      data: updateData
+    });
 
     // --- تسجيل لوغ وتنظيف السجلات عند انتهاء دورة التنظيف ---
     if (state && prevDevice) {
@@ -94,11 +77,16 @@ mqttClient.on('message', async (topic, message) => {
         if (state === 'WATER_LOW') logStatus = 'water_low';
 
         // إضافة سجل تنظيف بقاعدة البيانات
-        await db.run(
-          `INSERT INTO cleaning_logs (device_id, triggered_by, status, water_level_start, water_level_end, duration_seconds)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [devId, 'remote', logStatus, startInfo.level, endLevel, duration]
-        );
+        await prisma.cleaningLog.create({
+          data: {
+            device_id: devId,
+            triggered_by: 'remote',
+            status: logStatus,
+            water_level_start: startInfo.level,
+            water_level_end: endLevel,
+            duration_seconds: duration
+          }
+        });
 
         delete cleaningStartWaterLevels[devId];
       }
@@ -137,16 +125,19 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Please provide all details.' });
     }
     const hash = await bcrypt.hash(password, 10);
-    const result = await db.run(
-      'INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)',
-      [name, email, hash]
-    );
     
-    const user = await db.get('SELECT id, name, email FROM users WHERE id = ?', [result.lastID]);
-    const token = jwt.sign({ userId: result.lastID }, JWT_SECRET, { expiresIn: '7d' });
-    res.status(201).json({ user, token });
+    const result = await prisma.user.create({
+      data: {
+        name,
+        email,
+        password_hash: hash
+      }
+    });
+    
+    const token = jwt.sign({ userId: result.id }, JWT_SECRET, { expiresIn: '7d' });
+    res.status(201).json({ user: { id: result.id, name: result.name, email: result.email }, token });
   } catch (err: any) {
-    if (err.message && err.message.includes('UNIQUE constraint failed')) {
+    if (err.code === 'P2002') {
       res.status(400).json({ error: 'Email already registered' });
     } else {
       res.status(500).json({ error: 'Database error' });
@@ -157,7 +148,9 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
 app.post('/api/auth/login', async (req: Request, res: Response) => {
   const { email, password } = req.body;
   try {
-    const user = await db.get('SELECT * FROM users WHERE email = ?', [email]);
+    const user = await prisma.user.findUnique({
+      where: { email }
+    });
     if (!user) {
       return res.status(400).json({ error: 'User does not exist.' });
     }
@@ -179,14 +172,26 @@ app.post('/api/devices/register', authenticateToken, async (req: AuthenticatedRe
   try {
     if (!id || !name) return res.status(400).json({ error: 'Device ID and Name are required.' });
     
-    const checkDevice = await db.get('SELECT * FROM devices WHERE id = ?', [id]);
+    const checkDevice = await prisma.device.findUnique({
+      where: { id }
+    });
+
     if (checkDevice) {
-      await db.run('UPDATE devices SET user_id = ?, name = ? WHERE id = ?', [userId, name, id]);
+      await prisma.device.update({
+        where: { id },
+        data: { user_id: userId, name }
+      });
     } else {
-      await db.run(
-        'INSERT INTO devices (id, user_id, name, status, state, water_level) VALUES (?, ?, ?, ?, ?, ?)',
-        [id, userId, name, 'offline', 'IDLE', 0]
-      );
+      await prisma.device.create({
+        data: {
+          id,
+          user_id: userId,
+          name,
+          status: 'offline',
+          state: 'IDLE',
+          water_level: 0
+        }
+      });
     }
     res.json({ success: true, message: 'Device registered successfully.' });
   } catch (err: any) {
@@ -197,7 +202,10 @@ app.post('/api/devices/register', authenticateToken, async (req: AuthenticatedRe
 
 app.get('/api/devices', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const devices = await db.all('SELECT * FROM devices WHERE user_id = ? ORDER BY id', [req.userId]);
+    const devices = await prisma.device.findMany({
+      where: { user_id: req.userId },
+      orderBy: { id: 'asc' }
+    });
     res.json(devices);
   } catch (err) {
     res.status(500).json({ error: 'Database error' });
@@ -209,23 +217,24 @@ app.delete('/api/devices/:id', authenticateToken, async (req: AuthenticatedReque
   const { id } = req.params;
   console.log(`[DELETE Device] Request received for id: "${id}", user_id: ${req.userId}`);
   try {
-    // جلب معلومات الجهاز للتأكد من وجوده ولمن ينتمي (للتشخيص المفصل)
-    const dev = await db.get('SELECT * FROM devices WHERE id = ?', [id]);
-    console.log(`[DELETE Device] DB lookup result:`, dev);
+    const dev = await prisma.device.findFirst({
+      where: { id, user_id: req.userId }
+    });
 
     if (!dev) {
-      return res.status(404).json({ error: 'الجهاز غير مسجل في قاعدة البيانات إطلاقاً.' });
-    }
-
-    if (dev.user_id !== req.userId) {
-      return res.status(403).json({ error: `الجهاز ينتمي لمستخدم آخر (معرف المالك الحالي: ${dev.user_id}، معرفك أنت: ${req.userId})` });
+      return res.status(404).json({ error: 'الجهاز غير مسجل في حسابك.' });
     }
 
     // إلغاء ربط الجهاز (تعيين user_id = NULL)
-    await db.run('UPDATE devices SET user_id = NULL, status = ? WHERE id = ?', ['offline', id]);
+    await prisma.device.update({
+      where: { id },
+      data: { user_id: null, status: 'offline' }
+    });
     
     // مسح الجداول المجدولة المخصصة لهذا الجهاز تلقائياً
-    await db.run('DELETE FROM schedules WHERE device_id = ?', [id]);
+    await prisma.schedule.deleteMany({
+      where: { device_id: id }
+    });
 
     res.json({ success: true, message: 'Device unlinked successfully.' });
   } catch (err) {
@@ -239,19 +248,22 @@ app.post('/api/devices/:id/delete', authenticateToken, async (req: Authenticated
   const { id } = req.params;
   console.log(`[POST Delete Device] Request received for id: "${id}", user_id: ${req.userId}`);
   try {
-    const dev = await db.get('SELECT * FROM devices WHERE id = ?', [id]);
-    console.log(`[POST Delete Device] DB lookup result:`, dev);
+    const dev = await prisma.device.findFirst({
+      where: { id, user_id: req.userId }
+    });
 
     if (!dev) {
-      return res.status(404).json({ error: 'الجهاز غير مسجل في قاعدة البيانات إطلاقاً.' });
+      return res.status(404).json({ error: 'الجهاز غير مسجل في حسابك.' });
     }
 
-    if (dev.user_id !== req.userId) {
-      return res.status(403).json({ error: `الجهاز ينتمي لمستخدم آخر (معرف المالك الحالي: ${dev.user_id}، معرفك أنت: ${req.userId})` });
-    }
+    await prisma.device.update({
+      where: { id },
+      data: { user_id: null, status: 'offline' }
+    });
 
-    await db.run('UPDATE devices SET user_id = NULL, status = ? WHERE id = ?', ['offline', id]);
-    await db.run('DELETE FROM schedules WHERE device_id = ?', [id]);
+    await prisma.schedule.deleteMany({
+      where: { device_id: id }
+    });
 
     res.json({ success: true, message: 'Device unlinked successfully.' });
   } catch (err) {
@@ -264,7 +276,9 @@ app.post('/api/devices/:id/delete', authenticateToken, async (req: Authenticated
 app.post('/api/devices/:id/check-connection', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   try {
-    const dev = await db.get('SELECT * FROM devices WHERE id = ? AND user_id = ?', [id, req.userId]);
+    const dev = await prisma.device.findFirst({
+      where: { id, user_id: req.userId }
+    });
     if (!dev) return res.status(404).json({ error: 'Device not found.' });
 
     // حساب فرق التوقيت بين آخر ظهور للتأكد من النشاط الفعلي
@@ -278,10 +292,16 @@ app.post('/api/devices/:id/check-connection', authenticateToken, async (req: Aut
     let newStatus = dev.status;
     if (isOffline && dev.status !== 'offline') {
       newStatus = 'offline';
-      await db.run('UPDATE devices SET status = ? WHERE id = ?', ['offline', id]);
+      await prisma.device.update({
+        where: { id },
+        data: { status: 'offline' }
+      });
     } else if (!isOffline && dev.status !== 'online') {
       newStatus = 'online';
-      await db.run('UPDATE devices SET status = ? WHERE id = ?', ['online', id]);
+      await prisma.device.update({
+        where: { id },
+        data: { status: 'online' }
+      });
     }
 
     res.json({ 
@@ -300,7 +320,9 @@ app.post('/api/devices/:id/check-connection', authenticateToken, async (req: Aut
 app.post('/api/devices/:id/clean', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   try {
-    const dev = await db.get('SELECT * FROM devices WHERE id = ? AND user_id = ?', [id, req.userId]);
+    const dev = await prisma.device.findFirst({
+      where: { id, user_id: req.userId }
+    });
     if (!dev) return res.status(404).json({ error: 'Device not found.' });
 
     mqttClient.publish(`device/${id}/commands`, 'START_CLEAN');
@@ -313,7 +335,9 @@ app.post('/api/devices/:id/clean', authenticateToken, async (req: AuthenticatedR
 app.post('/api/devices/:id/stop', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   try {
-    const dev = await db.get('SELECT * FROM devices WHERE id = ? AND user_id = ?', [id, req.userId]);
+    const dev = await prisma.device.findFirst({
+      where: { id, user_id: req.userId }
+    });
     if (!dev) return res.status(404).json({ error: 'Device not found.' });
 
     mqttClient.publish(`device/${id}/commands`, 'STOP_CLEAN');
@@ -328,24 +352,28 @@ app.post('/api/devices/:id/schedules', authenticateToken, async (req: Authentica
   const { id } = req.params;
   const { cleaning_time, days_of_week } = req.body; // e.g. "08:30", [1, 3, 5]
   try {
-    const dev = await db.get('SELECT * FROM devices WHERE id = ? AND user_id = ?', [id, req.userId]);
+    const dev = await prisma.device.findFirst({
+      where: { id, user_id: req.userId }
+    });
     if (!dev) return res.status(404).json({ error: 'Device not found.' });
 
     // تحويل مصفوفة الأيام إلى سلسلة مفصولة بفواصل
     const daysStr = days_of_week.join(',');
 
-    const result = await db.run(
-      'INSERT INTO schedules (device_id, cleaning_time, days_of_week) VALUES (?, ?, ?)',
-      [id, cleaning_time, daysStr]
-    );
-    
-    const newSchedule = await db.get('SELECT * FROM schedules WHERE id = ?', [result.lastID]);
+    const newSchedule = await prisma.schedule.create({
+      data: {
+        device_id: id,
+        cleaning_time,
+        days_of_week: daysStr
+      }
+    });
     
     // إرجاع مصفوفة الأيام بدلاً من السلسلة النصية للواجهة الأمامية
-    if (newSchedule) {
-      newSchedule.days_of_week = newSchedule.days_of_week.split(',').map(Number);
-    }
-    res.status(201).json(newSchedule);
+    const formattedSchedule = {
+      ...newSchedule,
+      days_of_week: newSchedule.days_of_week.split(',').map(Number)
+    };
+    res.status(201).json(formattedSchedule);
   } catch (err) {
     res.status(500).json({ error: 'Database error' });
   }
@@ -354,14 +382,18 @@ app.post('/api/devices/:id/schedules', authenticateToken, async (req: Authentica
 app.get('/api/devices/:id/schedules', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   try {
-    const schedules = await db.all('SELECT * FROM schedules WHERE device_id = ? ORDER BY cleaning_time', [id]);
-    
-    // تحويل سلسلة الأيام مجدداً لمصفوفة أرقام لكل جدول
-    schedules.forEach(s => {
-      s.days_of_week = s.days_of_week.split(',').map(Number);
+    const schedules = await prisma.schedule.findMany({
+      where: { device_id: id },
+      orderBy: { cleaning_time: 'asc' }
     });
     
-    res.json(schedules);
+    // تحويل سلسلة الأيام مجدداً لمصفوفة أرقام لكل جدول
+    const formattedSchedules = schedules.map(s => ({
+      ...s,
+      days_of_week: s.days_of_week.split(',').map(Number)
+    }));
+    
+    res.json(formattedSchedules);
   } catch (err) {
     res.status(500).json({ error: 'Database error' });
   }
@@ -370,7 +402,9 @@ app.get('/api/devices/:id/schedules', authenticateToken, async (req: Authenticat
 app.delete('/api/schedules/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   try {
-    await db.run('DELETE FROM schedules WHERE id = ?', [id]);
+    await prisma.schedule.delete({
+      where: { id: Number(id) }
+    });
     res.json({ success: true, message: 'Schedule deleted.' });
   } catch (err) {
     res.status(500).json({ error: 'Database error' });
@@ -381,10 +415,11 @@ app.delete('/api/schedules/:id', authenticateToken, async (req: AuthenticatedReq
 app.get('/api/devices/:id/logs', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   try {
-    const logs = await db.all(
-      'SELECT * FROM cleaning_logs WHERE device_id = ? ORDER BY created_at DESC LIMIT 50',
-      [id]
-    );
+    const logs = await prisma.cleaningLog.findMany({
+      where: { device_id: id },
+      orderBy: { created_at: 'desc' },
+      take: 50
+    });
     res.json(logs);
   } catch (err) {
     res.status(500).json({ error: 'Database error' });
@@ -399,27 +434,28 @@ cron.schedule('* * * * *', async () => {
     const currentDay = String(now.getDay()); // "0" = Sunday, etc.
 
     // جلب كافة الجداول النشطة
-    const activeSchedules = await db.all(
-      `SELECT s.device_id, s.cleaning_time, s.days_of_week, d.status 
-       FROM schedules s
-       JOIN devices d ON s.device_id = d.id
-       WHERE s.is_active = 1`
-    );
+    const activeSchedules = await prisma.schedule.findMany({
+      where: { is_active: 1 },
+      include: { device: true }
+    });
 
     for (const schedule of activeSchedules) {
+      if (!schedule.device) continue;
       const days = schedule.days_of_week.split(',');
       
       // مطابقة الوقت الحاضر مع موعد الجدولة ويومها
       if (schedule.cleaning_time === currentHourMin && days.includes(currentDay)) {
-        if (schedule.status === 'online') {
+        if (schedule.device.status === 'online') {
           console.log(`Cron: Automatic cleaning triggered for device: ${schedule.device_id}`);
           mqttClient.publish(`device/${schedule.device_id}/commands`, 'START_CLEAN');
           
-          await db.run(
-            `INSERT INTO cleaning_logs (device_id, triggered_by, status)
-             VALUES (?, ?, ?)`,
-            [schedule.device_id, 'timer', 'success']
-          );
+          await prisma.cleaningLog.create({
+            data: {
+              device_id: schedule.device_id,
+              triggered_by: 'timer',
+              status: 'success'
+            }
+          });
         }
       }
     }
