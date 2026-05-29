@@ -218,6 +218,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
     }
   };
 
+  // إلغاء ربط وحذف الجهاز من حساب المستخدم
+  const handleDeleteDevice = async (devId: string) => {
+    if (!window.confirm('هل أنت متأكد من رغبتك في حذف وإلغاء ربط هذا الجهاز من حسابك؟')) return;
+    try {
+      const res = await fetch(`${API_URL}/api/devices/${devId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setSelectedDevice(null);
+        fetchDevices();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   // تبديل أيام الأسبوع لتسجيل الجدولة
   const toggleDay = (dayIndex: number) => {
     if (selectedDays.includes(dayIndex)) {
@@ -364,11 +381,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
                   <div>
                     <div className="flex justify-between items-center mb-4">
                       <h3 className="text-sm font-bold text-slate-400 tracking-wider uppercase">التحكم اليدوي</h3>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        selectedDevice.status === 'online' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
-                      }`}>
-                        {selectedDevice.status === 'online' ? 'نشط الآن' : 'غير متصل'}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleDeleteDevice(selectedDevice.id)}
+                          className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg border border-red-500/20 transition-all"
+                          title="حذف وإلغاء ربط هذا الجهاز"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          selectedDevice.status === 'online' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                        }`}>
+                          {selectedDevice.status === 'online' ? 'نشط الآن' : 'غير متصل'}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="space-y-3 mt-4">

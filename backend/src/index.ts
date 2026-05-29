@@ -203,6 +203,25 @@ app.get('/api/devices', authenticateToken, async (req: AuthenticatedRequest, res
   }
 });
 
+// مسار إلغاء ربط وحذف الجهاز من حساب المستخدم
+app.delete('/api/devices/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  try {
+    const dev = await db.get('SELECT * FROM devices WHERE id = ? AND user_id = ?', [id, req.userId]);
+    if (!dev) return res.status(404).json({ error: 'Device not found.' });
+
+    // إلغاء ربط الجهاز (تعيين user_id = NULL)
+    await db.run('UPDATE devices SET user_id = NULL, status = ? WHERE id = ?', ['offline', id]);
+    
+    // مسح الجداول المجدولة المخصصة لهذا الجهاز تلقائياً
+    await db.run('DELETE FROM schedules WHERE device_id = ?', [id]);
+
+    res.json({ success: true, message: 'Device unlinked successfully.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
 // ج. إرسال أوامر التحكم (MQTT Command Triggers)
 app.post('/api/devices/:id/clean', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
