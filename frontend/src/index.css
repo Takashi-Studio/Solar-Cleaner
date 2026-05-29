@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* تأثير تموجات المياه لحساس الخزان */
+@keyframes wave {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.water-wave-container {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.4), 0 0 10px rgba(6, 182, 212, 0.3);
+  overflow: hidden;
+  background-color: #1e293b;
+  border: 4px solid #0891b2;
+}
+
+.water-wave-element {
+  position: absolute;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(180deg, #06b6d4 0%, #0891b2 50%, #0369a1 100%);
+  border-radius: 38%;
+  left: -50%;
+  transition: top 1s ease-in-out;
+  animation: wave 10s linear infinite;
+  box-shadow: 0 0 10px rgba(6, 182, 212, 0.5);
+}
+
+.water-wave-element-second {
+  position: absolute;
+  width: 200%;
+  height: 200%;
+  background: rgba(6, 182, 212, 0.4);
+  border-radius: 35%;
+  left: -48%;
+  transition: top 1.2s ease-in-out;
+  animation: wave 7s linear infinite;
+}
+
+/* نمط جمالي للخلايا والبطاقات الزجاجية (Glassmorphism) */
+.glass-panel {
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
