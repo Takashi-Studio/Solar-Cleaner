@@ -9,6 +9,8 @@ services:
     container_name: solar-mqtt-broker
     ports:
       - "1883:1883"
+    networks:
+      - coolify
     restart: always
 
   # 2. خادم الـ Backend (Node.js + PostgreSQL + Prisma)
@@ -26,6 +28,8 @@ services:
       - MQTT_BROKER_URL=mqtt://mqtt-broker:1883
     depends_on:
       - mqtt-broker
+    networks:
+      - coolify
     restart: always
 
   # 3. واجهة الويب الـ Frontend (React + Nginx)
@@ -38,4 +42,10 @@ services:
       - "80"
     depends_on:
       - backend
+    networks:
+      - coolify
     restart: always
+
+networks:
+  coolify:
+    external: true
