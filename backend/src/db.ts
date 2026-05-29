@@ -2,6 +2,7 @@ import { open, Database } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 
 dotenv.config();
 
@@ -15,6 +16,12 @@ export async function initializeDatabase() {
   try {
     console.log(`Connecting to SQLite database at: ${dbPath}`);
     
+    // التأكد من وجود المجلد الأب لقاعدة البيانات لتفادي مشاكل المسار
+    const dbDir = path.dirname(dbPath);
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
+    }
+
     // فتح ملف قاعدة البيانات
     db = await open({
       filename: dbPath,
