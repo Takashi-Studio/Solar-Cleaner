@@ -21,7 +21,7 @@ services:
       - "5000:5000"
     environment:
       - PORT=5000
-      - DATABASE_URL=postgres://postgres:JR0snXZWiPs5mceARu9S3sbfOaDEVU9IOMzxyr1U1W3Xct6Y2pmPvQArI9bNA9Sf@161.97.152.98:12987/postgres
+      - DATABASE_URL=${DATABASE_URL}
       - JWT_SECRET=super_secret_jwt_token_solar_panels_cleaning_saas
       - MQTT_BROKER_URL=mqtt://mqtt-broker:1883
     depends_on:
