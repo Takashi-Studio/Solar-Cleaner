@@ -347,6 +347,36 @@ app.post('/api/devices/:id/stop', authenticateToken, async (req: AuthenticatedRe
   }
 });
 
+app.post('/api/devices/:id/speed', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const { speed } = req.body;
+  try {
+    const dev = await prisma.device.findFirst({
+      where: { id, user_id: req.userId }
+    });
+    if (!dev) return res.status(404).json({ error: 'Device not found.' });
+
+    const speedVal = Number(speed);
+    if (isNaN(speedVal) || speedVal < 200 || speedVal > 1000) {
+      return res.status(400).json({ error: 'Speed must be a number between 200 and 1000.' });
+    }
+
+    // 1. تحديث السرعة بقاعدة البيانات
+    await prisma.device.update({
+      where: { id },
+      data: { speed: speedVal }
+    });
+
+    // 2. إرسال الأمر عبر MQTT
+    mqttClient.publish(`device/${id}/commands`, `SPEED:${speedVal}`);
+
+    res.json({ success: true, message: `Sent SPEED:${speedVal} command.` });
+  } catch (err) {
+    console.error('[POST Speed] Error:', err);
+    res.status(500).json({ error: 'Error setting speed' });
+  }
+});
+
 // د. إدارة الجدولة الزمنية (Schedules)
 app.post('/api/devices/:id/schedules', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;

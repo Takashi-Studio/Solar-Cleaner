@@ -134,6 +134,15 @@ void handleSerialCommands() {
         stopEverything();
         Serial1.println("S:STOPPED");
       }
+      else if (command.startsWith("SPEED:")) {
+        int newSpeed = command.substring(6).toInt();
+        if (newSpeed >= 200 && newSpeed <= 1000) {
+          stepper1.setMaxSpeed(newSpeed);
+          stepper2.setMaxSpeed(newSpeed);
+          Serial.print("Debug: Updated max speed to: ");
+          Serial.println(newSpeed);
+        }
+      }
     }
   }
 }

@@ -18,6 +18,7 @@ interface Device {
   status: string;
   state: string;
   water_level: number;
+  speed?: number;
   last_seen: string;
 }
 
@@ -532,6 +533,47 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
                       <Square size={16} />
                       <span>إيقاف طوارئ فوري</span>
                     </button>
+                  </div>
+
+                  {/* متحكم منزلق بالسرعة في الوقت الفعلي */}
+                  <div className="mt-6 border-t border-slate-800/60 pt-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-[10px] text-slate-400 uppercase tracking-wider">سرعة حركة الروبوت</span>
+                      <span className="text-xs font-bold text-cyan-400 bg-cyan-400/10 px-2.5 py-0.5 rounded-full">{selectedDevice.speed || 800} خطوة/ث</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="200"
+                      max="1000"
+                      step="50"
+                      value={selectedDevice.speed || 800}
+                      disabled={selectedDevice.status !== 'online'}
+                      onChange={async (e) => {
+                        const newSpeed = Number(e.target.value);
+                        setSelectedDevice({
+                          ...selectedDevice,
+                          speed: newSpeed
+                        });
+                        try {
+                          await fetch(`${API_URL}/api/devices/${encodeURIComponent(selectedDevice.id)}/speed`, {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${token}`
+                            },
+                            body: JSON.stringify({ speed: newSpeed })
+                          });
+                        } catch (err) {
+                          console.error(err);
+                        }
+                      }}
+                      className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                    />
+                    <div className="flex justify-between text-[9px] text-slate-500 mt-1.5">
+                      <span>بطيء (200)</span>
+                      <span>متوسط (600)</span>
+                      <span>سريع (1000)</span>
+                    </div>
                   </div>
                 </div>
 

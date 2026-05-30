@@ -26,6 +26,7 @@ model Device {
   status      String        @default("offline")
   state       String        @default("IDLE")
   water_level Int           @default(0)
+  speed       Int           @default(800)
   last_seen   DateTime      @default(now())
   
   user        User?         @relation(fields: [user_id], references: [id], onDelete: SetNull)
