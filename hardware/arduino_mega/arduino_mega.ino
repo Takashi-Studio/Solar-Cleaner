@@ -2,13 +2,17 @@
 
 // --- تعريف التوصيلات ومنافذ الأردوينو ميقا ---
 
-// محرك الستيبر الأول (الجانب الأيسر للذراع)
-#define STEP_PIN_1 2
-#define DIR_PIN_1  3
+// محرك الستيبر الأول (الجانب الأيسر للذراع) - توصيل 4 أسلاك للـ ULN2003
+#define PIN_IN1_1 2
+#define PIN_IN2_1 3
+#define PIN_IN3_1 4
+#define PIN_IN4_1 5
 
-// محرك الستيبر الثاني (الجانب الأيمن للذراع)
-#define STEP_PIN_2 4
-#define DIR_PIN_2  5
+// محرك الستيبر الثاني (الجانب الأيمن للذراع) - توصيل 4 أسلاك للـ ULN2003
+#define PIN_IN1_2 6
+#define PIN_IN2_2 11
+#define PIN_IN3_2 12
+#define PIN_IN4_2 13
 
 // حساس المسافة لقياس الخزان (Ultrasonic Sensor HC-SR04)
 #define TRIG_PIN 7
@@ -21,14 +25,17 @@
 #define LIMIT_SWITCH_PIN 10
 
 // --- إعدادات المحركات والحركة ---
-// تعريف المحركات بنظام (Driver interface: 2 pins - Step & Dir)
-AccelStepper stepper1(AccelStepper::DRIVER, STEP_PIN_1, DIR_PIN_1);
-AccelStepper stepper2(AccelStepper::DRIVER, STEP_PIN_2, DIR_PIN_2);
+// تعريف نمط الـ Halfstep (8 خطوات) لتشغيل محركات 28BYJ-48 بنعومة فائقة وعزم قوي
+#define HALFSTEP 8
 
-// سرعة وتسارع المحركات
-const float MAX_SPEED = 1000.0;    // أقصى سرعة (خطوة في الثانية)
-const float ACCELERATION = 500.0;  // التسارع
-const long MAX_CLEANING_STEPS = 50000; // حد أمان في حال لم يلمس المفتاح لأي سبب ميكانيكي
+// تهيئة المحركين بنمط 4 أسلاك بالترتيب القياسي الصحيح لـ AccelStepper (IN1, IN3, IN2, IN4)
+AccelStepper stepper1(HALFSTEP, PIN_IN1_1, PIN_IN3_1, PIN_IN2_1, PIN_IN4_1);
+AccelStepper stepper2(HALFSTEP, PIN_IN1_2, PIN_IN3_2, PIN_IN2_2, PIN_IN4_2);
+
+// سرعة وتسارع المحركات (محركات 28BYJ-48 تحتوي على تروس تخفيض لذا تعمل بكفاءة في سرعات متوسطة)
+const float MAX_SPEED = 800.0;     // أقصى سرعة (خطوة في الثانية)
+const float ACCELERATION = 400.0;  // التسارع
+const long MAX_CLEANING_STEPS = 80000; // حد أمان للخطوات (بما أن المحرك يحتاج 4096 خطوة للدورة الكاملة)
 
 // --- إعدادات الخزان ---
 const int TANK_EMPTY_DISTANCE = 100; // مسافة الحساس بالسنتمتر عندما يكون الخزان فارغاً تماماً
