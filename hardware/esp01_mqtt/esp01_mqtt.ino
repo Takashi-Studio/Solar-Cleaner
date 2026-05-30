@@ -5,7 +5,7 @@
 #include <PubSubClient.h>         // مكتبة الاتصال بـ MQTT
 
 // إعدادات افتراضية (يمكن تغييرها من خلال صفحة الإعدادات Captive Portal)
-char mqtt_server[40] = "YOUR_VPS_IP";
+char mqtt_server[40] = "161.97.152.98";
 char mqtt_port[6] = "1883";
 char device_id[20] = "solar_cleaner_01";
 
