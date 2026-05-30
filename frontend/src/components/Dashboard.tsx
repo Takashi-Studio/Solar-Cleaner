@@ -282,13 +282,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
         await fetchDevices();
         
         if (data.status === 'online') {
-          setConnectionMessage({ 
-            text: `متصل! الجهاز نشط وتم استقبال إشارة منه قبل ${data.seconds_since_last_seen} ثانية.`, 
-            isError: false 
-          });
+          // لا داعي للرسالة عند الاتصال
+          setConnectionMessage(null);
         } else {
+          const formatLastSeen = (sec: number) => {
+            if (!sec || sec < 60) return 'أقل من دقيقة';
+            const mins = Math.floor(sec / 60);
+            if (mins < 60) return `${mins} دقيقة`;
+            const hrs = Math.floor(mins / 60);
+            if (hrs < 24) return `${hrs} ساعة`;
+            const days = Math.floor(hrs / 24);
+            return `${days} يوم`;
+          };
+
           setConnectionMessage({ 
-            text: `غير متصل! آخر إشارة مسجلة كانت قبل ${data.seconds_since_last_seen} ثانية.`, 
+            text: `غير متصل! آخر إشارة مسجلة كانت قبل ${formatLastSeen(data.seconds_since_last_seen)}.`, 
             isError: true 
           });
         }
