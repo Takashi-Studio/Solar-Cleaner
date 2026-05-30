@@ -286,8 +286,8 @@ app.post('/api/devices/:id/check-connection', authenticateToken, async (req: Aut
     const now = Date.now();
     const diffSeconds = Math.round((now - lastSeenTime) / 1000);
     
-    // نعتبره غير متصل إذا مرت أكثر من 15 ثانية على آخر إشارة
-    const isOffline = diffSeconds > 15;
+    // نعتبره غير متصل إذا مرت أكثر من 60 ثانية على آخر إشارة (لتفادي تأخير الواي فاي الطفيف)
+    const isOffline = diffSeconds > 60;
 
     let newStatus = dev.status;
     if (isOffline && dev.status !== 'offline') {
