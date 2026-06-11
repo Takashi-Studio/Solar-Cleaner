@@ -44,7 +44,7 @@ interface CleaningLog {
 
 const DAYS_NAMES = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 
-export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onNavigateToAdmin }) => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   
