@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, Cpu, Plus, Trash2, LogOut, Key, UserPlus, 
-  Shield, Check, X, AlertTriangle, RefreshCw, LayoutDashboard, Loader2
+  Shield, Check, X, AlertTriangle, RefreshCw, LayoutDashboard, Loader2,
+  Eye, EyeOff
 } from 'lucide-react';
 import { API_URL } from '../config';
 
@@ -51,6 +52,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
+  const [showUserPassword, setShowUserPassword] = useState(false);
   const [newUserRole, setNewUserRole] = useState('USER');
   const [creatingUser, setCreatingUser] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
@@ -140,6 +142,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setNewUserName('');
       setNewUserEmail('');
       setNewUserPassword('');
+      setShowUserPassword(false);
       setNewUserRole('USER');
       fetchUsers();
     } catch (err: any) {
@@ -302,14 +305,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase">كلمة المرور</label>
-                <input
-                  type="password"
-                  required
-                  placeholder="••••••••"
-                  className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700/50 rounded-xl focus:border-cyan-500 outline-none text-white text-xs transition-all"
-                  value={newUserPassword}
-                  onChange={(e) => setNewUserPassword(e.target.value)}
-                />
+                <div className="relative">
+                  <input
+                    type={showUserPassword ? 'text' : 'password'}
+                    required
+                    placeholder="••••••••"
+                    className="w-full pl-10 pr-4 py-3 bg-slate-900/50 border border-slate-700/50 rounded-xl focus:border-cyan-500 outline-none text-white text-xs transition-all"
+                    value={newUserPassword}
+                    onChange={(e) => setNewUserPassword(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowUserPassword(!showUserPassword)}
+                    className="absolute inset-y-0 left-3 flex items-center text-slate-500 hover:text-cyan-400 transition-colors"
+                  >
+                    {showUserPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
 
               <div>
