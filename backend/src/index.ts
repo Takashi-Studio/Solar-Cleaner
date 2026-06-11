@@ -100,6 +100,7 @@ mqttClient.on('message', async (topic, message) => {
 // --- 2. وسيط حماية الـ APIs باستخدام JWT Authentication ---
 interface AuthenticatedRequest extends Request {
   userId?: number;
+  userRole?: string;
 }
 
 function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -111,15 +112,24 @@ function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextF
   jwt.verify(token, JWT_SECRET, (err, decoded: any) => {
     if (err) return res.status(403).json({ error: 'Token is invalid or expired' });
     req.userId = decoded.userId;
+    req.userRole = decoded.role;
     next();
   });
+}
+
+function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  if (req.userRole !== 'ADMIN') {
+    return res.status(403).json({ error: 'غير مسموح. هذه الصلاحية للمدير فقط.' });
+  }
+  next();
 }
 
 // --- 3. مسارات الـ APIs (Endpoints) ---
 
 // أ. مسارات التوثيق (Authentication)
-app.post('/api/auth/register', async (req: Request, res: Response) => {
-  const { name, email, password } = req.body;
+// مسار التسجيل: خاص بالمسؤولين فقط لإنشاء حسابات المستخدمين الجدد
+app.post('/api/auth/register', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+  const { name, email, password, role } = req.body;
   try {
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Please provide all details.' });
@@ -130,12 +140,21 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
       data: {
         name,
         email,
-        password_hash: hash
+        password_hash: hash,
+        role: role || 'USER'
       }
     });
     
-    const token = jwt.sign({ userId: result.id }, JWT_SECRET, { expiresIn: '7d' });
-    res.status(201).json({ user: { id: result.id, name: result.name, email: result.email }, token });
+    res.status(201).json({ 
+      user: { 
+        id: result.id, 
+        name: result.name, 
+        email: result.email, 
+        role: result.role,
+        theme_preference: result.theme_preference, 
+        email_alerts_enabled: result.email_alerts_enabled 
+      } 
+    });
   } catch (err: any) {
     if (err.code === 'P2002') {
       res.status(400).json({ error: 'Email already registered' });
@@ -158,20 +177,69 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     if (!isMatch) {
       return res.status(400).json({ error: 'Incorrect password.' });
     }
-    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ user: { id: user.id, name: user.name, email: user.email }, token });
+    const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ 
+      user: { 
+        id: user.id, 
+        name: user.name, 
+        email: user.email, 
+        role: user.role,
+        theme_preference: user.theme_preference, 
+        email_alerts_enabled: user.email_alerts_enabled 
+      }, 
+      token 
+    });
   } catch (err) {
     res.status(500).json({ error: 'Database error' });
   }
 });
 
-// ب. مسارات الأجهزة (Devices)
-app.post('/api/devices/register', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  const { id, name } = req.body;
-  const userId = req.userId;
+app.put('/api/users/profile', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const { name, email, password, theme_preference, email_alerts_enabled } = req.body;
   try {
-    if (!id || !name) return res.status(400).json({ error: 'Device ID and Name are required.' });
+    let updateData: any = {};
+    if (name) updateData.name = name;
+    if (email) updateData.email = email;
+    if (theme_preference !== undefined) updateData.theme_preference = theme_preference;
+    if (email_alerts_enabled !== undefined) updateData.email_alerts_enabled = email_alerts_enabled;
+    if (password) {
+      updateData.password_hash = await bcrypt.hash(password, 10);
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.userId },
+      data: updateData
+    });
+
+    res.json({ 
+      user: { 
+        id: updatedUser.id, 
+        name: updatedUser.name, 
+        email: updatedUser.email, 
+        theme_preference: updatedUser.theme_preference, 
+        email_alerts_enabled: updatedUser.email_alerts_enabled 
+      } 
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+// ب. مسارات الأجهزة (Devices)
+// ب. مسارات الأجهزة (Devices)
+// تسجيل وربط جهاز جديد بمستخدم معين (للأدمن فقط)
+app.post('/api/devices/register', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { id, name, userId } = req.body;
+  try {
+    if (!id || !name) return res.status(400).json({ error: 'معرف الجهاز والاسم مطلوبان.' });
+    if (!userId) return res.status(400).json({ error: 'معرف المستخدم (User ID) مطلوب لربط الجهاز.' });
     
+    // التحقق من وجود المستخدم المستهدف
+    const targetUser = await prisma.user.findUnique({
+      where: { id: Number(userId) }
+    });
+    if (!targetUser) return res.status(404).json({ error: 'المستحدم المحدد غير موجود.' });
+
     const checkDevice = await prisma.device.findUnique({
       where: { id }
     });
@@ -179,13 +247,13 @@ app.post('/api/devices/register', authenticateToken, async (req: AuthenticatedRe
     if (checkDevice) {
       await prisma.device.update({
         where: { id },
-        data: { user_id: userId, name }
+        data: { user_id: Number(userId), name }
       });
     } else {
       await prisma.device.create({
         data: {
           id,
-          user_id: userId,
+          user_id: Number(userId),
           name,
           status: 'offline',
           state: 'IDLE',
@@ -193,7 +261,7 @@ app.post('/api/devices/register', authenticateToken, async (req: AuthenticatedRe
         }
       });
     }
-    res.json({ success: true, message: 'Device registered successfully.' });
+    res.json({ success: true, message: 'تم تسجيل الجهاز وربطه بالمستخدم بنجاح.' });
   } catch (err: any) {
     console.error('[Device Register] Error:', err);
     res.status(500).json({ error: `خطأ بقاعدة البيانات: ${err.message || err}` });
@@ -212,17 +280,17 @@ app.get('/api/devices', authenticateToken, async (req: AuthenticatedRequest, res
   }
 });
 
-// مسار إلغاء ربط وحذف الجهاز من حساب المستخدم
-app.delete('/api/devices/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+// إلغاء ربط الجهاز وحذفه من حساب المستخدم (للأدمن فقط)
+app.delete('/api/devices/:id', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
-  console.log(`[DELETE Device] Request received for id: "${id}", user_id: ${req.userId}`);
+  console.log(`[DELETE Device Admin] Request received for id: "${id}"`);
   try {
-    const dev = await prisma.device.findFirst({
-      where: { id, user_id: req.userId }
+    const dev = await prisma.device.findUnique({
+      where: { id }
     });
 
     if (!dev) {
-      return res.status(404).json({ error: 'الجهاز غير مسجل في حسابك.' });
+      return res.status(404).json({ error: 'الجهاز غير موجود.' });
     }
 
     // إلغاء ربط الجهاز (تعيين user_id = NULL)
@@ -243,17 +311,17 @@ app.delete('/api/devices/:id', authenticateToken, async (req: AuthenticatedReque
   }
 });
 
-// مسار بديل بالـ POST لزيادة التوافقية مع جدران الحماية والبروكسي التي تمنع الـ DELETE
-app.post('/api/devices/:id/delete', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+// مسار بديل بالـ POST لزيادة التوافقية (للأدمن فقط)
+app.post('/api/devices/:id/delete', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
-  console.log(`[POST Delete Device] Request received for id: "${id}", user_id: ${req.userId}`);
+  console.log(`[POST Delete Device Admin] Request received for id: "${id}"`);
   try {
-    const dev = await prisma.device.findFirst({
-      where: { id, user_id: req.userId }
+    const dev = await prisma.device.findUnique({
+      where: { id }
     });
 
     if (!dev) {
-      return res.status(404).json({ error: 'الجهاز غير مسجل في حسابك.' });
+      return res.status(404).json({ error: 'الجهاز غير موجود.' });
     }
 
     await prisma.device.update({
@@ -269,6 +337,50 @@ app.post('/api/devices/:id/delete', authenticateToken, async (req: Authenticated
   } catch (err) {
     console.error('[POST Delete Device] Error:', err);
     res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// ج. مسارات الإدارة الخاصة بالأدمن (Admin Dashboard Endpoints)
+app.get('/api/admin/users', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        theme_preference: true,
+        email_alerts_enabled: true,
+        created_at: true,
+        _count: {
+          select: { devices: true }
+        }
+      },
+      orderBy: { id: 'asc' }
+    });
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve users' });
+  }
+});
+
+app.get('/api/admin/devices', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const devices = await prisma.device.findMany({
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        }
+      },
+      orderBy: { id: 'asc' }
+    });
+    res.json(devices);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve devices' });
   }
 });
 

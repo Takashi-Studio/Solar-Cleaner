@@ -7,7 +7,7 @@
 // إعدادات افتراضية (يمكن تغييرها من خلال صفحة الإعدادات Captive Portal)
 char mqtt_server[40] = "161.97.152.98";
 char mqtt_port[6] = "1883";
-char device_id[20] = "solar_cleaner_01";
+char device_id[20] = ""; // سيتم توليده تلقائياً من الـ Chip ID الخاص بالجهاز
 
 // مواضيع الـ MQTT
 char topic_commands[50];
@@ -29,23 +29,30 @@ void setup() {
   Serial.begin(115200);
   delay(100);
 
+  // توليد معرف فريد للجهاز بناءً على Chip ID الخاص بـ ESP8266 بصيغة ست عشرية (Hexadecimal)
+  uint32_t chipId = ESP.getChipId();
+  snprintf(device_id, sizeof(device_id), "%08X", chipId);
+
   // إعداد ميزة WiFiManager
   WiFiManager wifiManager;
 
   // تعيين دالة حفظ الإعدادات
   wifiManager.setSaveConfigCallback(saveConfigCallback);
 
-  // إضافة حقول إدخال مخصصة لصفحة الـ Captive Portal لإدخال إعدادات السيرفر
+  // إضافة حقول إدخال مخصصة لصفحة الـ Captive Portal لإدخل إعدادات السيرفر
+  // (ملاحظة: تم إلغاء حقل الـ Device ID هنا لمنع المستخدم من تعيينه أو تعديله يدوياً)
   WiFiManagerParameter custom_mqtt_server("server", "MQTT Broker IP (VPS)", mqtt_server, 40);
   WiFiManagerParameter custom_mqtt_port("port", "MQTT Port", mqtt_port, 6);
-  WiFiManagerParameter custom_device_id("devid", "Device ID", device_id, 20);
 
   wifiManager.addParameter(&custom_mqtt_server);
   wifiManager.addParameter(&custom_mqtt_port);
-  wifiManager.addParameter(&custom_device_id);
 
-  // محاولة الاتصال بالشبكة المحفوظة، وإذا فشل يبث شبكة تهيئة باسم "Solar-Cleaner-Setup"
-  if (!wifiManager.autoConnect("Solar-Cleaner-Setup")) {
+  // بث شبكة تهيئة مخصصة تحمل اسم المعرّف الفريد للجهاز لكي يعرفه الأدمن بسهولة عند التهيئة
+  char ap_name[30];
+  snprintf(ap_name, sizeof(ap_name), "Solar-Setup-%s", device_id);
+
+  // محاولة الاتصال بالشبكة المحفوظة، وإذا فشل يبث شبكة التهيئة الخاصة بالجهاز
+  if (!wifiManager.autoConnect(ap_name)) {
     Serial.println("E:Failed to connect and hit timeout");
     delay(3000);
     ESP.reset();
@@ -55,7 +62,6 @@ void setup() {
   // قراءة القيم التي أدخلها المستخدم في صفحة الإعدادات
   strcpy(mqtt_server, custom_mqtt_server.getValue());
   strcpy(mqtt_port, custom_mqtt_port.getValue());
-  strcpy(device_id, custom_device_id.getValue());
 
   // إعداد مواضيع MQTT بناءً على معرّف الجهاز
   snprintf(topic_commands, sizeof(topic_commands), "device/%s/commands", device_id);
@@ -66,6 +72,8 @@ void setup() {
   client.setServer(mqtt_server, port);
   client.setCallback(mqttCallback);
 
+  Serial.print("I:Device ID: ");
+  Serial.println(device_id);
   Serial.println("I:WiFi Connected");
 }
 

@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Login } from './components/Login';
-import { Register } from './components/Register';
 import { Dashboard } from './components/Dashboard';
+import { AdminPanel } from './components/AdminPanel';
 
-type ViewState = 'login' | 'register' | 'dashboard';
+type ViewState = 'login' | 'dashboard' | 'admin';
 
 export default function App() {
   const [view, setView] = useState<ViewState>('login');
   const [token, setToken] = useState<string | null>(null);
-  const [user, setUser] = useState<{ id: number; name: string; email: string } | null>(null);
+  const [user, setUser] = useState<{ id: number; name: string; email: string; role?: string } | null>(null);
 
   // التحقق من وجود توكن تسجيل دخول محفوظ مسبقاً عند تحميل الصفحة
   useEffect(() => {
@@ -16,9 +16,16 @@ export default function App() {
     const savedUser = localStorage.getItem('solar_clean_user');
 
     if (savedToken && savedUser) {
+      const parsedUser = JSON.parse(savedUser);
       setToken(savedToken);
-      setUser(JSON.parse(savedUser));
-      setView('dashboard');
+      setUser(parsedUser);
+      
+      // توجيه الأدمن مباشرة للوحة التحكم الخاصة به
+      if (parsedUser.role === 'ADMIN') {
+        setView('admin');
+      } else {
+        setView('dashboard');
+      }
     }
   }, []);
 
@@ -27,7 +34,13 @@ export default function App() {
     setUser(loggedUser);
     localStorage.setItem('solar_clean_token', newToken);
     localStorage.setItem('solar_clean_user', JSON.stringify(loggedUser));
-    setView('dashboard');
+    
+    // التوجيه بناءً على نوع الحساب
+    if (loggedUser.role === 'ADMIN') {
+      setView('admin');
+    } else {
+      setView('dashboard');
+    }
   };
 
   const handleLogout = () => {
@@ -43,22 +56,25 @@ export default function App() {
       {view === 'login' && (
         <Login 
           onLogin={handleLoginSuccess} 
-          onNavigateToRegister={() => setView('register')} 
+          onNavigateToRegister={() => {}} 
         />
       )}
       
-      {view === 'register' && (
-        <Register 
-          onRegisterSuccess={handleLoginSuccess} 
-          onNavigateToLogin={() => setView('login')} 
-        />
-      )}
-
       {view === 'dashboard' && token && user && (
         <Dashboard 
           token={token} 
           user={user} 
           onLogout={handleLogout} 
+          onNavigateToAdmin={user.role === 'ADMIN' ? () => setView('admin') : undefined}
+        />
+      )}
+
+      {view === 'admin' && token && user && (
+        <AdminPanel 
+          token={token} 
+          user={user} 
+          onLogout={handleLogout} 
+          onNavigateToDashboard={() => setView('dashboard')}
         />
       )}
     </div>

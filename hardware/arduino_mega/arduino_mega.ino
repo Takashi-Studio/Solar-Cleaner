@@ -1,46 +1,38 @@
-#include <AccelStepper.h>
+// --- تعريف التوصيلات ومنافذ التحكم بمحركات الـ DC (L298N) ---
 
-// --- تعريف التوصيلات ومنافذ الأردوينو ميقا ---
+// المحرك الأول (الجانب الأيسر للذراع)
+#define MOTOR1_IN1 2
+#define MOTOR1_IN2 3
+#define MOTOR1_ENA 6   // منفذ PWM للتحكم بسرع المحرك الأول (أزل الجمبر الأسود)
 
-// محرك الستيبر الأول (الجانب الأيسر للذراع) - توصيل 4 أسلاك للـ ULN2003
-#define PIN_IN1_1 2
-#define PIN_IN2_1 3
-#define PIN_IN3_1 4
-#define PIN_IN4_1 5
+// المحرك الثاني (الجانب الأيمن للذراع)
+#define MOTOR2_IN3 4
+#define MOTOR2_IN4 5
+#define MOTOR2_ENB 11  // منفذ PWM للتحكم بسرع المحرك الثاني (أزل الجمبر الأسود)
 
-// محرك الستيبر الثاني (الجانب الأيمن للذراع) - توصيل 4 أسلاك للـ ULN2003
-#define PIN_IN1_2 6
-#define PIN_IN2_2 11
-#define PIN_IN3_2 12
-#define PIN_IN4_2 13
+// سرعة المحركات (من 0 إلى 255) - القيمة 50 تعني سرعة منخفضة جداً
+const int MOTOR_SPEED = 30;
 
 // حساس المسافة لقياس الخزان (Ultrasonic Sensor HC-SR04)
 #define TRIG_PIN 7
 #define ECHO_PIN 8
 
-// ريلي مضخة المياه 12 فولت
+// ريلي مضخة المياه 12 فولت (Active-Low)
 #define PUMP_RELAY_PIN 9
 
 // مفتاح نهاية الشوط (Limit Switch)
 #define LIMIT_SWITCH_PIN 10
 
-// --- إعدادات المحركات والحركة ---
-// تعريف نمط الـ Halfstep (8 خطوات) لتشغيل محركات 28BYJ-48 بنعومة فائقة وعزم قوي
-#define HALFSTEP 8
-
-// تهيئة المحركين بنمط 4 أسلاك بالترتيب القياسي الصحيح لـ AccelStepper (IN1, IN3, IN2, IN4)
-AccelStepper stepper1(HALFSTEP, PIN_IN1_1, PIN_IN3_1, PIN_IN2_1, PIN_IN4_1);
-AccelStepper stepper2(HALFSTEP, PIN_IN1_2, PIN_IN3_2, PIN_IN2_2, PIN_IN4_2);
-
-// سرعة وتسارع المحركات (محركات 28BYJ-48 تحتوي على تروس تخفيض لذا تعمل بكفاءة في سرعات متوسطة)
-const float MAX_SPEED = 800.0;     // أقصى سرعة (خطوة في الثانية)
-const float ACCELERATION = 400.0;  // التسارع
-const long MAX_CLEANING_STEPS = 80000; // حد أمان للخطوات (بما أن المحرك يحتاج 4096 خطوة للدورة الكاملة)
-
-// --- إعدادات الخزان ---
+// --- إعدادات الخزان والأمان ---
 const int TANK_EMPTY_DISTANCE = 100; // مسافة الحساس بالسنتمتر عندما يكون الخزان فارغاً تماماً
 const int TANK_FULL_DISTANCE = 10;  // مسافة الحساس بالسنتمتر عندما يكون الخزان ممتلئاً تماماً
 const int MIN_WATER_PERCENT = 15;   // الحد الأدنى المسموح به للماء لبدء التنظيف
+
+// --- متغيرات تتبع الوقت والحركة ---
+unsigned long cleaningStartTime = 0; // وقت بدء حركة الذهاب للأمام
+unsigned long travelTime = 0;        // الوقت الفعلي المستغرق للوصول للمفتاح
+unsigned long backwardStartTime = 0; // وقت بدء حركة العودة للخلف
+const unsigned long MAX_CLEANING_TIME = 20000; // حد أمان أقصى (20 ثانية) للحركة للأمام قبل العودة تلقائياً
 
 // --- حالات النظام (System States) ---
 enum SystemState {
@@ -51,7 +43,6 @@ enum SystemState {
 };
 
 SystemState currentState = IDLE;
-long stepsTraveled = 0; // لحفظ عدد الخطوات المقطوعة ذهاباً
 
 // توقيت قراءة الحساس وإرساله سحابياً (كل 10 ثوانٍ)
 unsigned long lastWaterCheck = 0;
@@ -64,31 +55,38 @@ void setup() {
   // منفذ Serial1 المتصل بـ ESP-01 (منفذ 19 لـ RX1، ومنفذ 18 لـ TX1)
   Serial1.begin(115200);
 
+  // إعداد منافذ محركات الـ DC كـ مخارج
+  pinMode(MOTOR1_IN1, OUTPUT);
+  pinMode(MOTOR1_IN2, OUTPUT);
+  pinMode(MOTOR1_ENA, OUTPUT);
+  pinMode(MOTOR2_IN3, OUTPUT);
+  pinMode(MOTOR2_IN4, OUTPUT);
+  pinMode(MOTOR2_ENB, OUTPUT);
+
+  // إيقاف المحركات كحالة افتراضية
+  stopMotors();
+
   // إعداد منافذ الحساسات والمضخة
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
+  
+  // إغلاق المضخة كحالة افتراضية (مستوى HIGH يعادل إيقاف في ريلي Active-Low)
+  digitalWrite(PUMP_RELAY_PIN, HIGH);
   pinMode(PUMP_RELAY_PIN, OUTPUT);
-  digitalWrite(PUMP_RELAY_PIN, LOW); // إغلاق المضخة كحالة افتراضية
 
   // إعداد مفتاح نهاية الشوط بمقاومة سحب داخلية (INPUT_PULLUP)
   // يقرأ LOW عندما يتم ضغطه (يتصل بالـ GND)
   pinMode(LIMIT_SWITCH_PIN, INPUT_PULLUP);
 
-  // إعداد تهيئة المحركات
-  stepper1.setMaxSpeed(MAX_SPEED);
-  stepper1.setAcceleration(ACCELERATION);
-  stepper2.setMaxSpeed(MAX_SPEED);
-  stepper2.setAcceleration(ACCELERATION);
-
   Serial.println("Arduino Mega 2560 initialized. Ready.");
 }
 
 void loop() {
-  // 1. معالجة أوامر الـ Serial المستلمة من الـ ESP-01 المبرمجة
+  // 1. معالجة أوامر الـ Serial المستلمة من الـ ESP-01 المبرمجة أو شاشة مراقبة الكمبيوتر
   handleSerialCommands();
 
-  // 2. تحديث حركة محركات الستيبر باستمرار
-  updateStepperMotors();
+  // 2. تحديث حركة محركات الـ DC وإدارة مسار الذراع
+  updateMotors();
 
   // 3. قراءة وإرسال مستوى المياه بانتظام
   unsigned long currentMillis = millis();
@@ -107,43 +105,51 @@ void loop() {
   }
 }
 
-// دالة قراءة ومعالجة الأوامر من ESP-01
+// دالة معالجة الأمر المستلم
+void processCommand(String incoming, bool fromESP) {
+  if (fromESP) {
+    Serial.print("Received from ESP-01: ");
+    Serial.println(incoming);
+  } else {
+    Serial.print("Received from USB Serial Monitor: ");
+    Serial.println(incoming);
+  }
+
+  // التحقق من صلاحية الأمر الموجه (يبدأ بـ C:)
+  if (incoming.startsWith("C:")) {
+    String command = incoming.substring(2);
+    
+    if (command == "START_CLEAN" && currentState == IDLE) {
+      // التحقق من الماء أولاً قبل البدء
+      int currentWater = measureWaterLevel();
+      if (currentWater < MIN_WATER_PERCENT) {
+        Serial.println("Safety: Water is too low to clean!");
+        Serial1.println("S:WATER_LOW");
+      } else {
+        startCleaningCycle();
+      }
+    } 
+    else if (command == "STOP_CLEAN") {
+      stopEverything();
+      Serial1.println("S:STOPPED");
+    }
+  }
+}
+
+// دالة قراءة ومعالجة الأوامر من ESP-01 وشاشة المراقبة للكمبيوتر
 void handleSerialCommands() {
+  // 1. استقبال الأوامر من قطعة الشبكة ESP-01
   if (Serial1.available()) {
     String incoming = Serial1.readStringUntil('\n');
     incoming.trim();
+    processCommand(incoming, true);
+  }
 
-    Serial.print("Received from ESP-01: ");
-    Serial.println(incoming);
-
-    // التحقق من صلاحية الأمر الموجه من السيرفر (يبدأ بـ C:)
-    if (incoming.startsWith("C:")) {
-      String command = incoming.substring(2);
-      
-      if (command == "START_CLEAN" && currentState == IDLE) {
-        // التحقق من الماء أولاً قبل البدء
-        int currentWater = measureWaterLevel();
-        if (currentWater < MIN_WATER_PERCENT) {
-          Serial.println("Safety: Water is too low to clean!");
-          Serial1.println("S:WATER_LOW");
-        } else {
-          startCleaningCycle();
-        }
-      } 
-      else if (command == "STOP_CLEAN") {
-        stopEverything();
-        Serial1.println("S:STOPPED");
-      }
-      else if (command.startsWith("SPEED:")) {
-        int newSpeed = command.substring(6).toInt();
-        if (newSpeed >= 200 && newSpeed <= 1000) {
-          stepper1.setMaxSpeed(newSpeed);
-          stepper2.setMaxSpeed(newSpeed);
-          Serial.print("Debug: Updated max speed to: ");
-          Serial.println(newSpeed);
-        }
-      }
-    }
+  // 2. استقبال الأوامر من شاشة مراقبة الكمبيوتر (USB) للتجريب المباشر
+  if (Serial.available()) {
+    String incoming = Serial.readStringUntil('\n');
+    incoming.trim();
+    processCommand(incoming, false);
   }
 }
 
@@ -152,73 +158,98 @@ void startCleaningCycle() {
   Serial.println("Starting cleaning cycle...");
   Serial1.println("S:CLEANING");
   
-  // تشغيل مضخة المياه
-  digitalWrite(PUMP_RELAY_PIN, HIGH);
+  // تشغيل مضخة المياه (Active-Low)
+  digitalWrite(PUMP_RELAY_PIN, LOW);
   
-  // تصفير المواضع الحالية للمحركات
-  stepper1.setCurrentPosition(0);
-  stepper2.setCurrentPosition(0);
+  // تشغيل المحركات للتحرك للأمام
+  moveMotorsForward();
   
-  // تعيين هدف للتحرك للأمام بمسافة أمان قصوى
-  stepper1.moveTo(MAX_CLEANING_STEPS);
-  stepper2.moveTo(MAX_CLEANING_STEPS);
-  
+  cleaningStartTime = millis();
   currentState = MOVING_FORWARD;
 }
 
-// دالة تحديث الحركة وإدارة الـ State Machine للمحركات
-void updateStepperMotors() {
+// دالة تحديث الحركة وإدارة المحركات بناء على نهاية الشوط أو الوقت
+void updateMotors() {
   if (currentState == IDLE) return;
+
+  unsigned long currentMillis = millis();
 
   if (currentState == MOVING_FORWARD) {
     // التحقق من ملامسة الـ Limit Switch (يقرأ LOW عند الملامسة)
     if (digitalRead(LIMIT_SWITCH_PIN) == LOW) {
       Serial.println("Limit switch triggered! Reversing direction...");
       
-      // إيقاف المحركات فوراً وحفظ المسافة التي قطعتها
-      stepsTraveled = stepper1.currentPosition();
+      // حساب الوقت المستغرق ذهاباً
+      travelTime = currentMillis - cleaningStartTime;
       
-      // عكس الوجهة للرجوع لنقطة الصفر البدئية
-      stepper1.moveTo(0);
-      stepper2.moveTo(0);
+      // عكس الدوران للرجوع للخلف
+      moveMotorsBackward();
       
+      backwardStartTime = currentMillis;
       currentState = MOVING_BACKWARD;
     } 
-    // فحص حد الأمان الأقصى لمنع استمرار الدوران للأبد
-    else if (stepper1.distanceToGo() == 0) {
-      Serial.println("Safety warning: Limit switch not hit but max steps reached. Returning.");
-      stepper1.moveTo(0);
-      stepper2.moveTo(0);
+    // فحص حد الأمان الأقصى للوقت لمنع استمرار الدوران للأبد في حال عدم تفعيل الحساس
+    else if (currentMillis - cleaningStartTime >= MAX_CLEANING_TIME) {
+      Serial.println("Safety warning: Limit switch not hit but max time reached. Returning.");
+      
+      travelTime = MAX_CLEANING_TIME;
+      moveMotorsBackward();
+      
+      backwardStartTime = currentMillis;
       currentState = MOVING_BACKWARD;
     }
-    
-    // تشغيل خطوة للمحركات
-    stepper1.run();
-    stepper2.run();
   } 
   
   else if (currentState == MOVING_BACKWARD) {
-    // التحقق من وصول المحركات للوضع الصفر (بداية اللوح)
-    if (stepper1.distanceToGo() == 0) {
+    // التحقق من انتهاء زمن العودة للخلف (يساوي تماماً زمن الذهاب)
+    if (currentMillis - backwardStartTime >= travelTime) {
       Serial.println("Cleaning cycle completed successfully!");
-      stopEverything(); // إطفاء المضخة
+      stopEverything(); // إطفاء المضخة والمحركات
       Serial1.println("S:CLEANING_DONE");
       currentState = IDLE;
-    } else {
-      // الاستمرار في التحرك للخلف
-      stepper1.run();
-      stepper2.run();
     }
   }
 }
 
-// إيقاف المضخة والمحركات فوراً
+// دالة إيقاف المضخة والمحركات فوراً
 void stopEverything() {
-  digitalWrite(PUMP_RELAY_PIN, LOW); // إيقاف المضخة
-  stepper1.stop();
-  stepper2.stop();
+  digitalWrite(PUMP_RELAY_PIN, HIGH); // إيقاف المضخة (Active-Low)
+  stopMotors(); // إيقاف المحركات
   currentState = IDLE;
   Serial.println("Emergency or regular stop executed.");
+}
+
+// دالة التحكم بحركة المحركات للأمام مع ضبط السرعة (تم عكس اتجاه المحرك الثاني)
+void moveMotorsForward() {
+  analogWrite(MOTOR1_ENA, MOTOR_SPEED);
+  digitalWrite(MOTOR1_IN1, HIGH);
+  digitalWrite(MOTOR1_IN2, LOW);
+  
+  analogWrite(MOTOR2_ENB, MOTOR_SPEED);
+  digitalWrite(MOTOR2_IN3, LOW);  // تم العكس
+  digitalWrite(MOTOR2_IN4, HIGH); // تم العكس
+}
+
+// دالة التحكم بحركة المحركات للخلف مع ضبط السرعة (تم عكس اتجاه المحرك الثاني)
+void moveMotorsBackward() {
+  analogWrite(MOTOR1_ENA, MOTOR_SPEED);
+  digitalWrite(MOTOR1_IN1, LOW);
+  digitalWrite(MOTOR1_IN2, HIGH);
+  
+  analogWrite(MOTOR2_ENB, MOTOR_SPEED);
+  digitalWrite(MOTOR2_IN3, HIGH); // تم العكس
+  digitalWrite(MOTOR2_IN4, LOW);  // تم العكس
+}
+
+// دالة إيقاف المحركات تماماً
+void stopMotors() {
+  analogWrite(MOTOR1_ENA, 0);
+  digitalWrite(MOTOR1_IN1, LOW);
+  digitalWrite(MOTOR1_IN2, LOW);
+  
+  analogWrite(MOTOR2_ENB, 0);
+  digitalWrite(MOTOR2_IN3, LOW);
+  digitalWrite(MOTOR2_IN4, LOW);
 }
 
 // دالة حساب وقراءة مستوى مياه الخزان ونسبته المئوية

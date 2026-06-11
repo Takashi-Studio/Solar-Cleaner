@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { WaterGauge } from './WaterGauge';
 import { 
-  Cpu, Power, Clock, History, Plus, Trash2, LogOut, 
+  Cpu, Power, Clock, History, Plus, Trash2, LogOut, Shield,
   Sun, CheckCircle2, AlertTriangle, Play, Square, Loader2 
 } from 'lucide-react';
 import { API_URL } from '../config';
 
 interface DashboardProps {
   token: string;
-  user: { id: number; name: string; email: string };
+  user: { id: number; name: string; email: string; role?: string };
   onLogout: () => void;
+  onNavigateToAdmin?: () => void;
 }
 
 interface Device {
@@ -356,6 +357,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
         </div>
 
         <div className="flex items-center gap-4">
+          {onNavigateToAdmin && (
+            <button 
+              onClick={onNavigateToAdmin}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-900 border border-slate-800 hover:border-cyan-500 hover:text-cyan-400 rounded-xl transition-all text-sm font-semibold shadow-md active:scale-95"
+            >
+              <Shield size={16} />
+              <span>لوحة الإدارة</span>
+            </button>
+          )}
           <div className="text-left hidden md:block">
             <p className="text-sm font-bold text-white">{user.name}</p>
             <p className="text-xs text-slate-400">{user.email}</p>
@@ -403,51 +413,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
             )}
           </div>
 
-          {/* صندوق ربط جهاز جديد */}
-          <div className="glass-panel rounded-2xl p-5">
-            <h2 className="text-sm font-bold text-slate-300 tracking-wider uppercase border-b border-slate-800 pb-2 mb-4">ربط جهاز جديد</h2>
-            <form onSubmit={handleRegisterDevice} className="space-y-4">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1.5">معرف الجهاز (ID)</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="مثال: solar_cleaner_01"
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white outline-none focus:border-cyan-500 transition-all placeholder:text-slate-700"
-                  value={newDeviceId}
-                  onChange={(e) => setNewDeviceId(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1.5">اسم الجهاز</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="مثال: الواح المزرعة"
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white outline-none focus:border-cyan-500 transition-all placeholder:text-slate-700"
-                  value={newDeviceName}
-                  onChange={(e) => setNewDeviceName(e.target.value)}
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={registering}
-                className="w-full py-2 bg-slate-800 hover:bg-cyan-600 text-white rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 border border-slate-700"
-              >
-                {registering ? 'جاري الربط...' : <Plus size={16} />}
-                <span>إضافة الجهاز</span>
-              </button>
-            </form>
+          {/* صندوق معلومات الاتصال بالمشرف */}
+          <div className="glass-panel rounded-2xl p-5 border border-slate-800/40">
+            <h2 className="text-sm font-bold text-slate-300 tracking-wider uppercase border-b border-slate-800 pb-2 mb-3">ربط الأجهزة الجديدة</h2>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              إضافة أو إلغاء ربط الأجهزة يتم حصرياً عن طريق مدير النظام (Admin) لضمان أمان حسابك.
+            </p>
           </div>
         </section>
 
         {/* المساحة الرئيسية للتحكم باللوحة - 9 أعمدة */}
         <section className="lg:col-span-9 flex flex-col gap-6">
           {!selectedDevice ? (
-            <div className="flex-1 glass-panel rounded-2xl flex flex-col items-center justify-center p-12 text-center">
+            <div className="flex-1 glass-panel rounded-2xl flex flex-col items-center justify-center p-12 text-center border border-slate-800">
               <Sun size={48} className="text-slate-700 mb-4 animate-pulse" />
-              <h3 className="text-lg font-bold text-slate-400">يرجى تسجيل جهاز أو تحديده للبدء</h3>
-              <p className="text-sm text-slate-600 mt-2">استخدم صندوق الإضافة بالجانب لربط جهاز التنظيف السحابي الخاص بك</p>
+              <h3 className="text-lg font-bold text-slate-400">لا يوجد جهاز محدد</h3>
+              <p className="text-sm text-slate-500 mt-2">يرجى تحديد جهاز من القائمة الجانبية لعرض حالته والتحكم به.</p>
             </div>
           ) : (
             <>
@@ -463,13 +444,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout }) =
                     <div className="flex justify-between items-center mb-4">
                       <h3 className="text-sm font-bold text-slate-400 tracking-wider uppercase">التحكم اليدوي</h3>
                       <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleDeleteDevice(selectedDevice.id)}
-                          className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg border border-red-500/20 transition-all"
-                          title="حذف وإلغاء ربط هذا الجهاز"
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                        {user.role === 'ADMIN' && (
+                          <button
+                            onClick={() => handleDeleteDevice(selectedDevice.id)}
+                            className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg border border-red-500/20 transition-all"
+                            title="حذف وإلغاء ربط هذا الجهاز"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                           selectedDevice.status === 'online' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
                         }`}>

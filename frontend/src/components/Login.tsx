@@ -104,17 +104,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onNavigateToRegister }) =
           </button>
         </form>
 
-        <div className="text-center mt-6">
-          <p className="text-slate-400 text-xs">
-            ليس لديك حساب؟{' '}
-            <button
-              onClick={onNavigateToRegister}
-              className="text-cyan-400 font-bold hover:underline"
-            >
-              سجل حساب جديد الآن
-            </button>
-          </p>
-        </div>
+        {/* تم إخفاء رابط التسجيل العام لأن إنشاء الحسابات يتم من خلال لوحة الأدمن فقط */}
       </div>
     </div>
   );
