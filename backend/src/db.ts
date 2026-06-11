@@ -9,9 +9,11 @@ export async function initializeDatabase() {
     await prisma.$connect();
     console.log('Connected to PostgreSQL database successfully via Prisma.');
 
-    // إنشاء مستخدم أدمن افتراضي إذا لم يكن هناك أي مستخدمين في النظام
-    const userCount = await prisma.user.count();
-    if (userCount === 0) {
+    // إنشاء مستخدم أدمن افتراضي إذا لم يكن موجوداً
+    const adminExists = await prisma.user.findUnique({
+      where: { email: 'admin@solar.com' }
+    });
+    if (!adminExists) {
       const defaultAdminPassword = 'adminPassword123';
       const hash = await bcrypt.hash(defaultAdminPassword, 10);
       await prisma.user.create({

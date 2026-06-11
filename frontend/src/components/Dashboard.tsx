@@ -26,8 +26,11 @@ interface Device {
 interface Schedule {
   id: number;
   device_id: string;
+  schedule_type: string;
   cleaning_time: string;
+  specific_date?: string | null;
   days_of_week: number[];
+  interval_weeks: number;
   is_active: number;
 }
 
@@ -60,6 +63,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [newTime, setNewTime] = useState('08:00');
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
+  const [scheduleType, setScheduleType] = useState<'weekly' | 'once'>('weekly');
+  const [specificDate, setSpecificDate] = useState('');
+  const [intervalWeeks, setIntervalWeeks] = useState(1);
   const [addingSchedule, setAddingSchedule] = useState(false);
 
   // سجلات التنظيف
@@ -196,7 +202,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
   // إضافة مؤقت للجدولة
   const handleAddSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedDevice || selectedDays.length === 0) return;
+    if (!selectedDevice) return;
+    if (scheduleType === 'weekly' && selectedDays.length === 0) return;
+    if (scheduleType === 'once' && !specificDate) return;
+
     setAddingSchedule(true);
     try {
       const res = await fetch(`${API_URL}/api/devices/${selectedDevice.id}/schedules`, {
@@ -205,11 +214,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ cleaning_time: newTime, days_of_week: selectedDays })
+        body: JSON.stringify({ 
+          schedule_type: scheduleType,
+          cleaning_time: newTime, 
+          specific_date: scheduleType === 'once' ? specificDate : null,
+          days_of_week: scheduleType === 'weekly' ? selectedDays : null,
+          interval_weeks: scheduleType === 'weekly' ? intervalWeeks : 1
+        })
       });
       if (res.ok) {
         setNewTime('08:00');
         setSelectedDays([]);
+        setSpecificDate('');
+        setIntervalWeeks(1);
         fetchDeviceDetails(selectedDevice.id);
       }
     } catch (err) {
@@ -565,6 +582,35 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
                   <div>
                     <h3 className="text-sm font-bold text-slate-400 tracking-wider uppercase mb-4 border-b border-slate-800 pb-2">جدولة تنظيف تلقائي</h3>
                     <form onSubmit={handleAddSchedule} className="space-y-4">
+                      
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1.5 uppercase tracking-wider">نوع الجدولة</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setScheduleType('weekly')}
+                            className={`py-2 text-[10px] font-bold rounded-xl border transition-all ${
+                              scheduleType === 'weekly'
+                                ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 font-extrabold'
+                                : 'bg-slate-900/30 border-slate-800 text-slate-500'
+                            }`}
+                          >
+                            دوري متكرر
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setScheduleType('once')}
+                            className={`py-2 text-[10px] font-bold rounded-xl border transition-all ${
+                              scheduleType === 'once'
+                                ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 font-extrabold'
+                                : 'bg-slate-900/30 border-slate-800 text-slate-500'
+                            }`}
+                          >
+                            تاريخ محدد
+                          </button>
+                        </div>
+                      </div>
+
                       <div>
                         <label className="block text-[10px] text-slate-400 mb-1 uppercase tracking-wider">وقت التنظيف</label>
                         <input
@@ -575,34 +621,67 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
                           onChange={(e) => setNewTime(e.target.value)}
                         />
                       </div>
-                      
-                      <div>
-                        <label className="block text-[10px] text-slate-400 mb-1 uppercase tracking-wider">الأيام المكررة</label>
-                        <div className="grid grid-cols-4 gap-1.5">
-                          {DAYS_NAMES.map((day, idx) => (
-                            <button
-                              key={idx}
-                              type="button"
-                              onClick={() => toggleDay(idx)}
-                              className={`py-1 text-[10px] font-bold rounded-lg border transition-all ${
-                                selectedDays.includes(idx)
-                                  ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 font-extrabold'
-                                  : 'bg-slate-900/30 border-slate-800 text-slate-500'
-                              }`}
-                            >
-                              {day.substring(0, 3)}
-                            </button>
-                          ))}
+
+                      {scheduleType === 'once' ? (
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1 uppercase tracking-wider">تاريخ التنظيف</label>
+                          <input
+                            type="date"
+                            required
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white text-sm outline-none focus:border-cyan-500 transition-all"
+                            value={specificDate}
+                            onChange={(e) => setSpecificDate(e.target.value)}
+                          />
                         </div>
-                      </div>
+                      ) : (
+                        <>
+                          <div>
+                            <label className="block text-[10px] text-slate-400 mb-1 uppercase tracking-wider">التكرار كل (أسابيع)</label>
+                            <select
+                              className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white text-sm outline-none focus:border-cyan-500 transition-all text-xs"
+                              value={intervalWeeks}
+                              onChange={(e) => setIntervalWeeks(Number(e.target.value))}
+                            >
+                              <option value={1}>كل أسبوع (أسبوعياً)</option>
+                              <option value={2}>كل أسبوعين</option>
+                              <option value={3}>كل 3 أسابيع</option>
+                              <option value={4}>كل شهر (4 أسابيع)</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] text-slate-400 mb-1 uppercase tracking-wider">الأيام المحددة</label>
+                            <div className="grid grid-cols-4 gap-1.5">
+                              {DAYS_NAMES.map((day, idx) => (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => toggleDay(idx)}
+                                  className={`py-1 text-[10px] font-bold rounded-lg border transition-all ${
+                                    selectedDays.includes(idx)
+                                      ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 font-extrabold'
+                                      : 'bg-slate-900/30 border-slate-800 text-slate-500'
+                                  }`}
+                                >
+                                  {day.substring(0, 3)}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
 
                       <button
                         type="submit"
-                        disabled={addingSchedule || selectedDays.length === 0}
+                        disabled={
+                          addingSchedule || 
+                          (scheduleType === 'weekly' && selectedDays.length === 0) || 
+                          (scheduleType === 'once' && !specificDate)
+                        }
                         className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-700 disabled:opacity-40 disabled:pointer-events-none text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all"
                       >
                         {addingSchedule ? 'جاري الحفظ...' : <Clock size={14} />}
-                        <span>حفظ المؤقت المجدول</span>
+                        <span>حفظ الجدول التلقائي</span>
                       </button>
                     </form>
                   </div>
@@ -625,11 +704,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
                       {schedules.map(sched => (
                         <div key={sched.id} className="p-3 bg-slate-900/40 border border-slate-800 rounded-xl flex items-center justify-between text-right">
                           <div>
-                            <div className="text-base font-black text-cyan-400">{sched.cleaning_time}</div>
-                            <div className="text-[10px] text-slate-500 mt-1 flex flex-wrap gap-1">
-                              {sched.days_of_week.map(d => (
-                                <span key={d} className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-semibold">{DAYS_NAMES[d]}</span>
-                              ))}
+                            <div className="text-base font-black text-cyan-400 flex items-center gap-2">
+                              <span>{sched.cleaning_time}</span>
+                              {sched.schedule_type === 'once' ? (
+                                <span className="px-1.5 py-0.5 bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 rounded text-[9px] font-bold">
+                                  مرة واحدة
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded text-[9px] font-bold">
+                                  دوري
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-500 mt-1 flex flex-wrap gap-1.5 items-center">
+                              {sched.schedule_type === 'once' ? (
+                                <span className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded text-slate-300 font-medium">التاريخ: {sched.specific_date}</span>
+                              ) : (
+                                <>
+                                  <span className="bg-slate-950 border border-slate-800 px-1.5 py-0.5 rounded text-slate-300 font-medium">
+                                    كل {sched.interval_weeks === 1 ? 'أسبوع' : `${sched.interval_weeks} أسابيع`}
+                                  </span>
+                                  {sched.days_of_week.map(d => (
+                                    <span key={d} className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-semibold">{DAYS_NAMES[d]}</span>
+                                  ))}
+                                </>
+                              )}
                             </div>
                           </div>
                           <button

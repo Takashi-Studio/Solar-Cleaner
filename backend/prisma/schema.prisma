@@ -40,14 +40,17 @@ model Device {
 }
 
 model Schedule {
-  id            Int      @id @default(autoincrement())
-  device_id     String?
-  cleaning_time String
-  days_of_week  String   // سنخزن الأيام كسلسلة مفصولة بفواصل، مثل: "1,3,5"
-  is_active     Int      @default(1)
-  created_at    DateTime @default(now())
+  id             Int       @id @default(autoincrement())
+  device_id      String?
+  schedule_type  String    @default("weekly") // "once" أو "weekly"
+  cleaning_time  String    // مثلاً "08:30"
+  specific_date  String?   // لتخزين تاريخ لمرة واحدة بصيغة "YYYY-MM-DD"
+  days_of_week   String?   // للأسبوعي المتكرر، مثل "1,3,5"
+  interval_weeks Int       @default(1) // للتكرار كل X أسابيع (1، 2، 3، إلخ)
+  is_active      Int       @default(1)
+  created_at     DateTime  @default(now())
 
-  device        Device?  @relation(fields: [device_id], references: [id], onDelete: Cascade)
+  device         Device?   @relation(fields: [device_id], references: [id], onDelete: Cascade)
 
   @@map("schedules")
 }

@@ -492,31 +492,39 @@ app.post('/api/devices/:id/speed', authenticateToken, async (req: AuthenticatedR
 // د. إدارة الجدولة الزمنية (Schedules)
 app.post('/api/devices/:id/schedules', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
-  const { cleaning_time, days_of_week } = req.body; // e.g. "08:30", [1, 3, 5]
+  const { schedule_type, cleaning_time, specific_date, days_of_week, interval_weeks } = req.body;
   try {
     const dev = await prisma.device.findFirst({
       where: { id, user_id: req.userId }
     });
     if (!dev) return res.status(404).json({ error: 'Device not found.' });
 
-    // تحويل مصفوفة الأيام إلى سلسلة مفصولة بفواصل
-    const daysStr = days_of_week.join(',');
+    if (!cleaning_time) return res.status(400).json({ error: 'الوقت مطلوب.' });
+
+    let daysStr = null;
+    if (schedule_type === 'weekly' && Array.isArray(days_of_week)) {
+      daysStr = days_of_week.join(',');
+    }
 
     const newSchedule = await prisma.schedule.create({
       data: {
         device_id: id,
+        schedule_type: schedule_type || 'weekly',
         cleaning_time,
-        days_of_week: daysStr
+        specific_date: schedule_type === 'once' ? specific_date : null,
+        days_of_week: daysStr,
+        interval_weeks: schedule_type === 'weekly' ? Number(interval_weeks || 1) : 1
       }
     });
     
-    // إرجاع مصفوفة الأيام بدلاً من السلسلة النصية للواجهة الأمامية
+    // إرجاع الجدولة بتنسيق مناسب للواجهة الأمامية
     const formattedSchedule = {
       ...newSchedule,
-      days_of_week: newSchedule.days_of_week.split(',').map(Number)
+      days_of_week: newSchedule.days_of_week ? newSchedule.days_of_week.split(',').map(Number) : []
     };
     res.status(201).json(formattedSchedule);
   } catch (err) {
+    console.error('[Create Schedule] Error:', err);
     res.status(500).json({ error: 'Database error' });
   }
 });
@@ -529,10 +537,9 @@ app.get('/api/devices/:id/schedules', authenticateToken, async (req: Authenticat
       orderBy: { cleaning_time: 'asc' }
     });
     
-    // تحويل سلسلة الأيام مجدداً لمصفوفة أرقام لكل جدول
     const formattedSchedules = schedules.map(s => ({
       ...s,
-      days_of_week: s.days_of_week.split(',').map(Number)
+      days_of_week: s.days_of_week ? s.days_of_week.split(',').map(Number) : []
     }));
     
     res.json(formattedSchedules);
@@ -575,6 +582,11 @@ cron.schedule('* * * * *', async () => {
     const currentHourMin = now.toTimeString().substring(0, 5); // "08:30"
     const currentDay = String(now.getDay()); // "0" = Sunday, etc.
 
+    // الحصول على التاريخ المحلي الحالي بصيغة "YYYY-MM-DD"
+    const offset = now.getTimezoneOffset();
+    const localDate = new Date(now.getTime() - (offset * 60 * 1000));
+    const currentDateStr = localDate.toISOString().split('T')[0]; // "2026-05-16"
+
     // جلب كافة الجداول النشطة
     const activeSchedules = await prisma.schedule.findMany({
       where: { is_active: 1 },
@@ -583,10 +595,38 @@ cron.schedule('* * * * *', async () => {
 
     for (const schedule of activeSchedules) {
       if (!schedule.device) continue;
-      const days = schedule.days_of_week.split(',');
       
-      // مطابقة الوقت الحاضر مع موعد الجدولة ويومها
-      if (schedule.cleaning_time === currentHourMin && days.includes(currentDay)) {
+      let shouldRun = false;
+
+      if (schedule.schedule_type === 'once') {
+        // مطابقة التاريخ المحدد للتنظيف لمرة واحدة مع التوقيت
+        if (schedule.specific_date === currentDateStr && schedule.cleaning_time === currentHourMin) {
+          shouldRun = true;
+        }
+      } else {
+        // مطابقة الجدولة المتكررة مع مطابقة فواصل الأسابيع (كل X أسابيع)
+        if (schedule.cleaning_time === currentHourMin) {
+          const days = schedule.days_of_week ? schedule.days_of_week.split(',') : [];
+          if (days.includes(currentDay)) {
+            // حساب الفارق بالأسابيع بين تاريخ إنشاء الجدولة وتاريخ اليوم
+            const msInWeek = 7 * 24 * 60 * 60 * 1000;
+            const startWeekDate = new Date(schedule.created_at);
+            startWeekDate.setHours(0, 0, 0, 0);
+            
+            const nowCopy = new Date(now);
+            nowCopy.setHours(0, 0, 0, 0);
+            
+            const diffWeeks = Math.floor((nowCopy.getTime() - startWeekDate.getTime()) / msInWeek);
+            
+            // إذا كان الأسبوع الحالي يتطابق مع فاصل التكرار (مثلاً: كل أسبوعين)
+            if (diffWeeks % schedule.interval_weeks === 0) {
+              shouldRun = true;
+            }
+          }
+        }
+      }
+
+      if (shouldRun) {
         if (schedule.device.status === 'online') {
           console.log(`Cron: Automatic cleaning triggered for device: ${schedule.device_id}`);
           mqttClient.publish(`device/${schedule.device_id}/commands`, 'START_CLEAN');
@@ -598,6 +638,14 @@ cron.schedule('* * * * *', async () => {
               status: 'success'
             }
           });
+
+          // إذا كانت الجدولة لمرة واحدة، نقوم بتعطيلها لكي لا تتكرر
+          if (schedule.schedule_type === 'once') {
+            await prisma.schedule.update({
+              where: { id: schedule.id },
+              data: { is_active: 0 }
+            });
+          }
         }
       }
     }
