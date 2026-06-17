@@ -21,6 +21,12 @@ void saveConfigCallback () {
   shouldSaveConfig = true;
 }
 
+// دالة رد اتصال يتم تشغيلها عند فشل الاتصال بالواي فاي والبدء في بث شبكة تهيئة (AP)
+void configModeCallback (WiFiManager *myWiFiManager) {
+  Serial.print("I:WiFi offline or not configured. Starting Setup Hotspot AP: ");
+  Serial.println(myWiFiManager->getConfigPortalSSID());
+}
+
 // دالة استقبال رسائل الـ MQTT من السيرفر
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   // تمرير الأمر مباشرة إلى الأردوينو ميقا عبر Serial كـ JSON
@@ -77,6 +83,8 @@ void setup() {
 
   // تعيين دالة حفظ الإعدادات
   wifiManager.setSaveConfigCallback(saveConfigCallback);
+  // تعيين دالة نمط الإعداد (بث شبكة الواي فاي)
+  wifiManager.setAPCallback(configModeCallback);
 
   // إضافة حقول إدخال مخصصة لصفحة الـ Captive Portal لإدخل إعدادات السيرفر
   WiFiManagerParameter custom_mqtt_server("server", "MQTT Broker IP (VPS)", mqtt_server, 40);

@@ -274,6 +274,23 @@ void handleSerialCommands() {
 }
 
 void processCommand(String incoming) {
+  // تصفية وطباعة تنبيهات ورسائل قطعة الواي فاي الواردة
+  if (incoming.startsWith("I:")) {
+    Serial.print("[WiFi Info] ");
+    Serial.println(incoming.substring(2));
+    return;
+  }
+  if (incoming.startsWith("E:")) {
+    Serial.print("[WiFi Error] ⚠️ ");
+    Serial.println(incoming.substring(2));
+    return;
+  }
+  if (incoming.startsWith("*wm:")) {
+    Serial.print("[WiFi Setup] ");
+    Serial.println(incoming.substring(4));
+    return;
+  }
+
   Serial.print("[CMD] Received: "); Serial.println(incoming);
 
   // استخراج قيمة "cmd"
