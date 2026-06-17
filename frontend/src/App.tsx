@@ -3,14 +3,21 @@ import { Login } from './components/Login';
 import { Dashboard } from './components/Dashboard';
 import { AdminPanel } from './components/AdminPanel';
 
-type ViewState = 'login' | 'dashboard' | 'admin';
-
 export default function App() {
-  const [view, setView] = useState<ViewState>('login');
   const [token, setToken] = useState<string | null>(null);
-  const [user, setUser] = useState<{ id: number; name: string; email: string; role?: string } | null>(null);
+  const [user, setUser] = useState<{ id: number; name: string; username: string; role?: string } | null>(null);
+  const [currentHash, setCurrentHash] = useState<string>(window.location.hash || '#/login');
 
-  // التحقق من وجود توكن تسجيل دخول محفوظ مسبقاً عند تحميل الصفحة
+  // الاستماع لتغيرات مسار الصفحة (Hash Routing)
+  useEffect(() => {
+    const handleHashChange = () => {
+      setCurrentHash(window.location.hash || '#/login');
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // التحقق من التوكن المحفوظ عند تحميل الصفحة لأول مرة
   useEffect(() => {
     const savedToken = localStorage.getItem('solar_clean_token');
     const savedUser = localStorage.getItem('solar_clean_user');
@@ -20,12 +27,17 @@ export default function App() {
       setToken(savedToken);
       setUser(parsedUser);
       
-      // توجيه الأدمن مباشرة للوحة التحكم الخاصة به
-      if (parsedUser.role === 'ADMIN') {
-        setView('admin');
-      } else {
-        setView('dashboard');
+      // التوجيه التلقائي للمسار الافتراضي بناءً على الدور إذا لم يكن هناك مسار محدد
+      const current = window.location.hash;
+      if (!current || current === '#/login' || current === '#/') {
+        if (parsedUser.role === 'ADMIN') {
+          window.location.hash = '#/admin/overview';
+        } else {
+          window.location.hash = '#/dashboard';
+        }
       }
+    } else {
+      window.location.hash = '#/login';
     }
   }, []);
 
@@ -35,11 +47,11 @@ export default function App() {
     localStorage.setItem('solar_clean_token', newToken);
     localStorage.setItem('solar_clean_user', JSON.stringify(loggedUser));
     
-    // التوجيه بناءً على نوع الحساب
+    // توجيه الأدمن أو المستخدم العادي لصفحته المخصصة بعد نجاح الدخول
     if (loggedUser.role === 'ADMIN') {
-      setView('admin');
+      window.location.hash = '#/admin/overview';
     } else {
-      setView('dashboard');
+      window.location.hash = '#/dashboard';
     }
   };
 
@@ -48,33 +60,50 @@ export default function App() {
     setUser(null);
     localStorage.removeItem('solar_clean_token');
     localStorage.removeItem('solar_clean_user');
-    setView('login');
+    window.location.hash = '#/login';
   };
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 antialiased overflow-x-hidden">
-      {view === 'login' && (
+  const isLoggedIn = !!token && !!user;
+
+  // إذا لم يكن مسجلاً، فاعرض صفحة الدخول دائماً
+  if (!isLoggedIn) {
+    if (currentHash !== '#/login') {
+      window.location.hash = '#/login';
+    }
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 antialiased overflow-x-hidden">
         <Login 
           onLogin={handleLoginSuccess} 
           onNavigateToRegister={() => {}} 
         />
-      )}
-      
-      {view === 'dashboard' && token && user && (
-        <Dashboard 
-          token={token} 
-          user={user} 
-          onLogout={handleLogout} 
-          onNavigateToAdmin={user.role === 'ADMIN' ? () => setView('admin') : undefined}
-        />
-      )}
+      </div>
+    );
+  }
 
-      {view === 'admin' && token && user && (
+  // إذا كان مسجلاً ويحاول فتح صفحة الدخول، فوجهه للداشبورد
+  if (currentHash === '#/login') {
+    if (user?.role === 'ADMIN') {
+      window.location.hash = '#/admin/overview';
+    } else {
+      window.location.hash = '#/dashboard';
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 antialiased overflow-x-hidden">
+      {currentHash.startsWith('#/admin') && user!.role === 'ADMIN' ? (
         <AdminPanel 
-          token={token} 
-          user={user} 
+          token={token!} 
+          user={user!} 
           onLogout={handleLogout} 
-          onNavigateToDashboard={() => setView('dashboard')}
+          onNavigateToDashboard={() => { window.location.hash = '#/dashboard'; }}
+        />
+      ) : (
+        <Dashboard 
+          token={token!} 
+          user={user!} 
+          onLogout={handleLogout} 
+          onNavigateToAdmin={user!.role === 'ADMIN' ? () => { window.location.hash = '#/admin/overview'; } : undefined}
         />
       )}
     </div>

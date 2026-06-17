@@ -1,3 +1,5 @@
+import dotenv from 'dotenv';
+dotenv.config();
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
@@ -5,9 +7,6 @@ import jwt from 'jsonwebtoken';
 import mqtt from 'mqtt';
 import cron from 'node-cron';
 import { prisma, initializeDatabase } from './db';
-import dotenv from 'dotenv';
-
-dotenv.config();
 
 const app = express();
 app.use(cors());
@@ -17,100 +16,182 @@ const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 const MQTT_BROKER_URL = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883';
 
-// لتخزين مؤقت لمستوى الماء عند بدء التنظيف (لحساب استهلاك المياه)
-const cleaningStartWaterLevels: Record<string, { level: number; time: number }> = {};
+// حد الإيقاف الطارئ التلقائي لمستوى الماء (%)
+const EMERGENCY_STOP_WATER_LEVEL = 10;
 
-// --- 1. إعداد الـ MQTT Client للاتصال بالوسيط (Mosquitto) ---
+// لتخزين وقت ومستوى الماء عند بدء كل تنظيف
+const cleaningStartData: Record<number, { level: number; time: number }> = {};
+
+// =============================================================
+//  1. إعداد MQTT Client
+// =============================================================
 const mqttClient = mqtt.connect(MQTT_BROKER_URL);
 
 mqttClient.on('connect', () => {
-  console.log('Connected to MQTT Broker successfully.');
-  mqttClient.subscribe('device/+/status', (err) => {
-    if (err) console.error('Subscription error:', err);
+  console.log('[MQTT] Connected to broker.');
+  // الاشتراك في رسائل الحالة من المتحكمات
+  mqttClient.subscribe('controller/+/telemetry', (err) => {
+    if (err) console.error('[MQTT] Subscribe error:', err);
+    else console.log('[MQTT] Subscribed to controller/+/telemetry');
   });
 });
 
+mqttClient.on('error', (err) => {
+  console.error('[MQTT] Connection error:', err.message);
+});
+
+// إرسال أمر JSON للأردوينو عبر MQTT
+function sendCommand(controllerId: string, port: number, cmd: 'START_CLEAN' | 'STOP_CLEAN') {
+  const payload = JSON.stringify({ cmd, port });
+  mqttClient.publish(`controller/${controllerId}/commands`, payload);
+  console.log(`[MQTT] Command sent -> controller/${controllerId}/commands: ${payload}`);
+}
+
+// =============================================================
+//  2. معالجة الرسائل الواردة من المتحكمات (Telemetry Handler)
+//
+//  أنواع الرسائل المتوقعة من الأردوينو:
+//  {"type":"boot","controller":"ARD-MEGA-001","units":[{"port":1,"installed":true},...]}
+//  {"type":"water","controller":"ARD-MEGA-001","port":1,"level":85}
+//  {"type":"status","controller":"ARD-MEGA-001","port":1,"state":"CLEANING"}
+// =============================================================
 mqttClient.on('message', async (topic, message) => {
   try {
-    const topicParts = topic.split('/');
-    const devId = topicParts[1];
     const payload = JSON.parse(message.toString());
+    const controllerId: string = payload.controller;
+    if (!controllerId) return;
 
-    // تحديث قاعدة البيانات بناءً على الرسالة الواردة
-    const { water_level, state, status } = payload;
+    // تحديث last_seen للمتحكم
+    const controller = await prisma.controller.findUnique({ where: { id: controllerId } });
+    if (!controller) {
+      console.warn(`[MQTT] Unknown controller: ${controllerId}. Ignoring.`);
+      return;
+    }
 
-    // جلب الحالة الحالية للجهاز قبل التحديث
-    const prevDevice = await prisma.device.findUnique({
-      where: { id: devId }
+    await prisma.controller.update({
+      where: { id: controllerId },
+      data: { status: 'online', last_seen: new Date() }
     });
 
-    let updateData: any = { last_seen: new Date() };
-    if (status) updateData.status = status;
-    if (water_level !== undefined) updateData.water_level = water_level;
-    if (state !== undefined) updateData.state = state;
-
-    await prisma.device.update({
-      where: { id: devId },
-      data: updateData
-    });
-
-    // --- تسجيل لوغ وتنظيف السجلات عند انتهاء دورة التنظيف ---
-    if (state && prevDevice) {
-      // 1. إذا بدأ التنظيف، نخزن مستوى المياه البدئي والوقت
-      if (state === 'CLEANING' && prevDevice.state !== 'CLEANING') {
-        const startLevel = water_level !== undefined ? water_level : prevDevice.water_level;
-        cleaningStartWaterLevels[devId] = {
-          level: startLevel,
-          time: Date.now()
-        };
+    // --- تقرير الإقلاع: مزامنة وحدات التنظيف تلقائياً (Plug & Play) ---
+    if (payload.type === 'boot' && Array.isArray(payload.units)) {
+      console.log(`[BOOT] Controller ${controllerId} booted. Syncing ${payload.units.length} units...`);
+      for (const unitInfo of payload.units as { port: number; installed: boolean }[]) {
+        const existing = await prisma.cleaningUnit.findFirst({
+          where: { controller_id: controllerId, port_number: unitInfo.port }
+        });
+        if (existing) {
+          await prisma.cleaningUnit.update({
+            where: { id: existing.id },
+            data: { is_installed: unitInfo.installed }
+          });
+        } else {
+          await prisma.cleaningUnit.create({
+            data: {
+              controller_id: controllerId,
+              port_number: unitInfo.port,
+              name: `وحدة ${unitInfo.port}`,
+              is_installed: unitInfo.installed,
+              state: 'IDLE',
+              water_level: 0
+            }
+          });
+        }
+        console.log(`[BOOT] Unit port ${unitInfo.port}: installed=${unitInfo.installed}`);
       }
-      
-      // 2. إذا انتهى التنظيف بنجاح، أو توقف لسبب آخر
-      const isFinished = ['CLEANING_DONE', 'STOPPED', 'WATER_LOW'].includes(state) && prevDevice.state === 'CLEANING';
-      if (isFinished) {
-        const startInfo = cleaningStartWaterLevels[devId] || { level: prevDevice.water_level, time: Date.now() };
-        const endLevel = water_level !== undefined ? water_level : prevDevice.water_level;
-        const duration = Math.round((Date.now() - startInfo.time) / 1000);
-        
-        let logStatus = 'success';
-        if (state === 'STOPPED') logStatus = 'stopped';
-        if (state === 'WATER_LOW') logStatus = 'water_low';
+      return;
+    }
 
-        // إضافة سجل تنظيف بقاعدة البيانات
+    // --- تحديث مستوى الماء لوحدة محددة ---
+    if (payload.type === 'water' && payload.port != null && payload.level != null) {
+      const unit = await prisma.cleaningUnit.findFirst({
+        where: { controller_id: controllerId, port_number: Number(payload.port) }
+      });
+      if (!unit) return;
+
+      await prisma.cleaningUnit.update({
+        where: { id: unit.id },
+        data: { water_level: Number(payload.level) }
+      });
+
+      // ⚠️ إيقاف طارئ تلقائي إذا انخفض الماء أثناء التنظيف
+      if (unit.state === 'CLEANING' && Number(payload.level) <= EMERGENCY_STOP_WATER_LEVEL) {
+        console.warn(`[EMERGENCY STOP] Unit ${unit.id} water critical (${payload.level}%). Sending STOP.`);
+        sendCommand(controllerId, unit.port_number, 'STOP_CLEAN');
+        // الأردوينو يوقف المضخة ويعود للبداية تلقائياً
+        // سيُرسل RETURNING_HOME ثم WATER_LOW عند الوصول — السجل يُنشأ عندها
+      }
+      return;
+    }
+
+    // --- تحديث حالة الوحدة ---
+    if (payload.type === 'status' && payload.port != null && payload.state) {
+      const unit = await prisma.cleaningUnit.findFirst({
+        where: { controller_id: controllerId, port_number: Number(payload.port) }
+      });
+      if (!unit) return;
+
+      const prevState = unit.state;
+      const newState: string = payload.state;
+
+      await prisma.cleaningUnit.update({
+        where: { id: unit.id },
+        data: { state: newState }
+      });
+
+      // عند بدء التنظيف: حفظ مستوى الماء الأولي والوقت
+      if (newState === 'CLEANING' && prevState !== 'CLEANING') {
+        cleaningStartData[unit.id] = { level: unit.water_level, time: Date.now() };
+        console.log(`[LOG] Unit ${unit.id} started cleaning. Water: ${unit.water_level}%`);
+      }
+
+      // عند انتهاء التنظيف: إنشاء سجل
+      // الحالات التي تعني انتهاء دورة التنظيف (بنجاح أو بخطأ)
+      // RETURNING_HOME = حالة انتقالية (عودة آمنة بدون مضخة) — لا تُسجَّل كنهاية
+      // WATER_LOW      = نهائية: وصل للبداية بعد إيقاف طارئ بسبب نقص الماء
+      const finishedStates = ['CLEANING_DONE', 'STOPPED', 'WATER_LOW', 'LIMIT_SWITCH_ERROR', 'SENSOR_ERR'];
+      // نتحقق من الحالة السابقة: CLEANING أو RETURNING_HOME كلاهما يعني أن الوحدة كانت نشطة
+      const wasActive = prevState === 'CLEANING' || prevState === 'RETURNING_HOME';
+
+      if (finishedStates.includes(newState) && wasActive) {
+        const startInfo = cleaningStartData[unit.id] || { level: unit.water_level, time: Date.now() };
+        const duration = Math.round((Date.now() - startInfo.time) / 1000);
+        // تحديد مصدر التشغيل بدقة
+        const triggeredBy = newState === 'WATER_LOW' ? 'auto_emergency' : 'device';
+
         await prisma.cleaningLog.create({
           data: {
-            device_id: devId,
-            triggered_by: 'remote',
-            status: logStatus,
+            unit_id: unit.id,
+            triggered_by: triggeredBy,
+            status: newState,
             water_level_start: startInfo.level,
-            water_level_end: endLevel,
+            water_level_end: unit.water_level,
             duration_seconds: duration
           }
         });
-
-        delete cleaningStartWaterLevels[devId];
+        delete cleaningStartData[unit.id];
+        console.log(`[LOG] Unit ${unit.id} finished: ${newState} in ${duration}s (triggered_by: ${triggeredBy})`);
       }
     }
 
-  } catch (error) {
-    console.error('Error handling MQTT message:', error);
+  } catch (err) {
+    console.error('[MQTT] Error handling message:', err);
   }
 });
 
-// --- 2. وسيط حماية الـ APIs باستخدام JWT Authentication ---
+// =============================================================
+//  3. JWT Middleware
+// =============================================================
 interface AuthenticatedRequest extends Request {
   userId?: number;
   userRole?: string;
 }
 
 function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
+  const token = req.headers['authorization']?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Access token missing' });
-
   jwt.verify(token, JWT_SECRET, (err, decoded: any) => {
-    if (err) return res.status(403).json({ error: 'Token is invalid or expired' });
+    if (err) return res.status(403).json({ error: 'Token invalid or expired' });
     req.userId = decoded.userId;
     req.userRole = decoded.role;
     next();
@@ -118,454 +199,208 @@ function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextF
 }
 
 function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  if (req.userRole !== 'ADMIN') {
-    return res.status(403).json({ error: 'غير مسموح. هذه الصلاحية للمدير فقط.' });
-  }
+  if (req.userRole !== 'ADMIN') return res.status(403).json({ error: 'Admin only.' });
   next();
 }
 
-// --- 3. مسارات الـ APIs (Endpoints) ---
-
-// أ. مسارات التوثيق (Authentication)
-// مسار التسجيل: خاص بالمسؤولين فقط لإنشاء حسابات المستخدمين الجدد
-app.post('/api/auth/register', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
-  const { name, email, password, role } = req.body;
-  try {
-    if (!name || !email || !password) {
-      return res.status(400).json({ error: 'Please provide all details.' });
-    }
-    const hash = await bcrypt.hash(password, 10);
-    
-    const result = await prisma.user.create({
-      data: {
-        name,
-        email,
-        password_hash: hash,
-        role: role || 'USER'
-      }
-    });
-    
-    res.status(201).json({ 
-      user: { 
-        id: result.id, 
-        name: result.name, 
-        email: result.email, 
-        role: result.role,
-        theme_preference: result.theme_preference, 
-        email_alerts_enabled: result.email_alerts_enabled 
-      } 
-    });
-  } catch (err: any) {
-    if (err.code === 'P2002') {
-      res.status(400).json({ error: 'Email already registered' });
-    } else {
-      res.status(500).json({ error: 'Database error' });
-    }
-  }
-});
-
+// =============================================================
+//  4. Auth Endpoints
+// =============================================================
 app.post('/api/auth/login', async (req: Request, res: Response) => {
-  const { email, password } = req.body;
+  const { username, password } = req.body;
   try {
-    const user = await prisma.user.findUnique({
-      where: { email }
-    });
-    if (!user) {
-      return res.status(400).json({ error: 'User does not exist.' });
-    }
-    const isMatch = await bcrypt.compare(password, user.password_hash);
-    if (!isMatch) {
-      return res.status(400).json({ error: 'Incorrect password.' });
-    }
+    const user = await prisma.user.findUnique({ where: { username } });
+    if (!user) return res.status(400).json({ error: 'المستخدم غير موجود.' });
+    if (!user.is_active) return res.status(403).json({ error: 'تم تعطيل هذا الحساب.' });
+    const match = await bcrypt.compare(password, user.password_hash);
+    if (!match) return res.status(400).json({ error: 'كلمة المرور غير صحيحة.' });
     const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ 
-      user: { 
-        id: user.id, 
-        name: user.name, 
-        email: user.email, 
-        role: user.role,
-        theme_preference: user.theme_preference, 
-        email_alerts_enabled: user.email_alerts_enabled 
-      }, 
-      token 
-    });
+    res.json({ token, user: { id: user.id, name: user.name, username: user.username, role: user.role, theme_preference: user.theme_preference } });
   } catch (err) {
     res.status(500).json({ error: 'Database error' });
   }
 });
 
-app.put('/api/users/profile', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  const { name, email, password, theme_preference, email_alerts_enabled } = req.body;
+app.post('/api/auth/register', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+  const { name, username, password, role } = req.body;
+  if (!name || !username || !password) return res.status(400).json({ error: 'All fields required.' });
   try {
-    let updateData: any = {};
-    if (name) updateData.name = name;
-    if (email) updateData.email = email;
-    if (theme_preference !== undefined) updateData.theme_preference = theme_preference;
-    if (email_alerts_enabled !== undefined) updateData.email_alerts_enabled = email_alerts_enabled;
-    if (password) {
-      updateData.password_hash = await bcrypt.hash(password, 10);
-    }
-
-    const updatedUser = await prisma.user.update({
-      where: { id: req.userId },
-      data: updateData
-    });
-
-    res.json({ 
-      user: { 
-        id: updatedUser.id, 
-        name: updatedUser.name, 
-        email: updatedUser.email, 
-        theme_preference: updatedUser.theme_preference, 
-        email_alerts_enabled: updatedUser.email_alerts_enabled 
-      } 
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update profile' });
-  }
-});
-
-// ب. مسارات الأجهزة (Devices)
-// ب. مسارات الأجهزة (Devices)
-// تسجيل وربط جهاز جديد بمستخدم معين (للأدمن فقط)
-app.post('/api/devices/register', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const { id, name, userId } = req.body;
-  try {
-    if (!id || !name) return res.status(400).json({ error: 'معرف الجهاز والاسم مطلوبان.' });
-    if (!userId) return res.status(400).json({ error: 'معرف المستخدم (User ID) مطلوب لربط الجهاز.' });
-    
-    // التحقق من وجود المستخدم المستهدف
-    const targetUser = await prisma.user.findUnique({
-      where: { id: Number(userId) }
-    });
-    if (!targetUser) return res.status(404).json({ error: 'المستحدم المحدد غير موجود.' });
-
-    const checkDevice = await prisma.device.findUnique({
-      where: { id }
-    });
-
-    if (checkDevice) {
-      await prisma.device.update({
-        where: { id },
-        data: { user_id: Number(userId), name }
-      });
-    } else {
-      await prisma.device.create({
-        data: {
-          id,
-          user_id: Number(userId),
-          name,
-          status: 'offline',
-          state: 'IDLE',
-          water_level: 0
-        }
-      });
-    }
-    res.json({ success: true, message: 'تم تسجيل الجهاز وربطه بالمستخدم بنجاح.' });
+    const hash = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({ data: { name, username, password_hash: hash, role: role || 'USER' } });
+    res.status(201).json({ user: { id: user.id, name: user.name, username: user.username, role: user.role } });
   } catch (err: any) {
-    console.error('[Device Register] Error:', err);
-    res.status(500).json({ error: `خطأ بقاعدة البيانات: ${err.message || err}` });
+    if (err.code === 'P2002') return res.status(400).json({ error: 'Username already exists.' });
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
-app.get('/api/devices', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/profile/theme', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const { theme } = req.body;
+  if (!theme) return res.status(400).json({ error: 'theme is required' });
   try {
-    const devices = await prisma.device.findMany({
+    const updated = await prisma.user.update({
+      where: { id: req.userId },
+      data: { theme_preference: theme }
+    });
+    res.json({ success: true, theme_preference: updated.theme_preference });
+  } catch (err) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// =============================================================
+//  5. Controllers Endpoints (User-facing)
+// =============================================================
+
+// جلب المتحكمات مع وحداتها للمستخدم الحالي
+app.get('/api/controllers', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const controllers = await prisma.controller.findMany({
       where: { user_id: req.userId },
-      orderBy: { id: 'asc' }
+      include: { units: { orderBy: { port_number: 'asc' } } },
+      orderBy: { name: 'asc' }
     });
-    res.json(devices);
+    res.json(controllers);
   } catch (err) {
     res.status(500).json({ error: 'Database error' });
   }
 });
 
-// إلغاء ربط الجهاز وحذفه من حساب المستخدم (للأدمن فقط)
-app.delete('/api/devices/:id', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const { id } = req.params;
-  console.log(`[DELETE Device Admin] Request received for id: "${id}"`);
-  try {
-    const dev = await prisma.device.findUnique({
-      where: { id }
-    });
+// =============================================================
+//  6. Unit Control Endpoints
+// =============================================================
 
-    if (!dev) {
-      return res.status(404).json({ error: 'الجهاز غير موجود.' });
+// بدء التنظيف لوحدة محددة
+app.post('/api/controllers/:controllerId/units/:unitId/clean', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const { controllerId, unitId } = req.params;
+  try {
+    const unit = await prisma.cleaningUnit.findFirst({
+      where: { id: Number(unitId), controller_id: controllerId, controller: { user_id: req.userId! } }
+    });
+    if (!unit) return res.status(404).json({ error: 'الوحدة غير موجودة.' });
+    if (!unit.is_installed) return res.status(400).json({ error: 'الوحدة غير موصولة.' });
+    if (unit.water_level <= EMERGENCY_STOP_WATER_LEVEL) {
+      return res.status(400).json({ error: `مستوى الماء منخفض جداً (${unit.water_level}%). يجب إعادة ملء الخزان أولاً.` });
     }
-
-    // إلغاء ربط الجهاز (تعيين user_id = NULL)
-    await prisma.device.update({
-      where: { id },
-      data: { user_id: null, status: 'offline' }
-    });
-    
-    // مسح الجداول المجدولة المخصصة لهذا الجهاز تلقائياً
-    await prisma.schedule.deleteMany({
-      where: { device_id: id }
-    });
-
-    res.json({ success: true, message: 'Device unlinked successfully.' });
+    sendCommand(controllerId, unit.port_number, 'START_CLEAN');
+    res.json({ success: true, message: 'تم إرسال أمر بدء التنظيف.' });
   } catch (err) {
-    console.error('[DELETE Device] Error:', err);
-    res.status(500).json({ error: 'Database error' });
+    res.status(500).json({ error: 'Error sending command' });
   }
 });
 
-// مسار بديل بالـ POST لزيادة التوافقية (للأدمن فقط)
-app.post('/api/devices/:id/delete', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const { id } = req.params;
-  console.log(`[POST Delete Device Admin] Request received for id: "${id}"`);
+// إيقاف طارئ لوحدة محددة
+app.post('/api/controllers/:controllerId/units/:unitId/stop', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const { controllerId, unitId } = req.params;
   try {
-    const dev = await prisma.device.findUnique({
-      where: { id }
+    const unit = await prisma.cleaningUnit.findFirst({
+      where: { id: Number(unitId), controller_id: controllerId, controller: { user_id: req.userId! } }
     });
-
-    if (!dev) {
-      return res.status(404).json({ error: 'الجهاز غير موجود.' });
-    }
-
-    await prisma.device.update({
-      where: { id },
-      data: { user_id: null, status: 'offline' }
-    });
-
-    await prisma.schedule.deleteMany({
-      where: { device_id: id }
-    });
-
-    res.json({ success: true, message: 'Device unlinked successfully.' });
+    if (!unit) return res.status(404).json({ error: 'الوحدة غير موجودة.' });
+    sendCommand(controllerId, unit.port_number, 'STOP_CLEAN');
+    res.json({ success: true, message: 'تم إرسال أمر الإيقاف الطارئ.' });
   } catch (err) {
-    console.error('[POST Delete Device] Error:', err);
-    res.status(500).json({ error: 'Database error' });
+    res.status(500).json({ error: 'Error sending command' });
   }
 });
 
-// ج. مسارات الإدارة الخاصة بالأدمن (Admin Dashboard Endpoints)
-app.get('/api/admin/users', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+// =============================================================
+//  7. Schedules Endpoints
+// =============================================================
+
+app.get('/api/units/:unitId/schedules', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const { unitId } = req.params;
   try {
-    const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        theme_preference: true,
-        email_alerts_enabled: true,
-        created_at: true,
-        _count: {
-          select: { devices: true }
-        }
-      },
-      orderBy: { id: 'asc' }
+    const schedules = await prisma.schedule.findMany({
+      where: { unit_id: Number(unitId) },
+      orderBy: { cleaning_time: 'asc' }
     });
-    res.json(users);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to retrieve users' });
-  }
-});
-
-app.get('/api/admin/devices', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const devices = await prisma.device.findMany({
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true
-          }
-        }
-      },
-      orderBy: { id: 'asc' }
-    });
-    res.json(devices);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to retrieve devices' });
-  }
-});
-
-// مسار التحقق اليدوي والفوري من حالة اتصال الجهاز بالشبكة
-app.post('/api/devices/:id/check-connection', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  const { id } = req.params;
-  try {
-    const dev = await prisma.device.findFirst({
-      where: { id, user_id: req.userId }
-    });
-    if (!dev) return res.status(404).json({ error: 'Device not found.' });
-
-    // حساب فرق التوقيت بين آخر ظهور للتأكد من النشاط الفعلي
-    const lastSeenTime = new Date(dev.last_seen).getTime();
-    const now = Date.now();
-    const diffSeconds = Math.round((now - lastSeenTime) / 1000);
-    
-    // نعتبره غير متصل إذا مرت أكثر من 60 ثانية على آخر إشارة (لتفادي تأخير الواي فاي الطفيف)
-    const isOffline = diffSeconds > 60;
-
-    let newStatus = dev.status;
-    if (isOffline && dev.status !== 'offline') {
-      newStatus = 'offline';
-      await prisma.device.update({
-        where: { id },
-        data: { status: 'offline' }
-      });
-    } else if (!isOffline && dev.status !== 'online') {
-      newStatus = 'online';
-      await prisma.device.update({
-        where: { id },
-        data: { status: 'online' }
-      });
-    }
-
-    res.json({ 
-      success: true,
-      id, 
-      status: newStatus, 
-      last_seen: dev.last_seen,
-      seconds_since_last_seen: diffSeconds
-    });
+    res.json(schedules);
   } catch (err) {
     res.status(500).json({ error: 'Database error' });
   }
 });
 
-// ج. إرسال أوامر التحكم (MQTT Command Triggers)
-app.post('/api/devices/:id/clean', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  const { id } = req.params;
-  try {
-    const dev = await prisma.device.findFirst({
-      where: { id, user_id: req.userId }
-    });
-    if (!dev) return res.status(404).json({ error: 'Device not found.' });
-
-    mqttClient.publish(`device/${id}/commands`, 'START_CLEAN');
-    res.json({ success: true, message: 'Sent START_CLEAN command.' });
-  } catch (err) {
-    res.status(500).json({ error: 'Error triggering cleaning' });
-  }
-});
-
-app.post('/api/devices/:id/stop', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  const { id } = req.params;
-  try {
-    const dev = await prisma.device.findFirst({
-      where: { id, user_id: req.userId }
-    });
-    if (!dev) return res.status(404).json({ error: 'Device not found.' });
-
-    mqttClient.publish(`device/${id}/commands`, 'STOP_CLEAN');
-    res.json({ success: true, message: 'Sent STOP_CLEAN command.' });
-  } catch (err) {
-    res.status(500).json({ error: 'Error stopping cleaning' });
-  }
-});
-
-app.post('/api/devices/:id/speed', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  const { id } = req.params;
-  const { speed } = req.body;
-  try {
-    const dev = await prisma.device.findFirst({
-      where: { id, user_id: req.userId }
-    });
-    if (!dev) return res.status(404).json({ error: 'Device not found.' });
-
-    const speedVal = Number(speed);
-    if (isNaN(speedVal) || speedVal < 200 || speedVal > 1000) {
-      return res.status(400).json({ error: 'Speed must be a number between 200 and 1000.' });
-    }
-
-    // 1. تحديث السرعة بقاعدة البيانات
-    await prisma.device.update({
-      where: { id },
-      data: { speed: speedVal }
-    });
-
-    // 2. إرسال الأمر عبر MQTT
-    mqttClient.publish(`device/${id}/commands`, `SPEED:${speedVal}`);
-
-    res.json({ success: true, message: `Sent SPEED:${speedVal} command.` });
-  } catch (err) {
-    console.error('[POST Speed] Error:', err);
-    res.status(500).json({ error: 'Error setting speed' });
-  }
-});
-
-// د. إدارة الجدولة الزمنية (Schedules)
-app.post('/api/devices/:id/schedules', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  const { id } = req.params;
+app.post('/api/units/:unitId/schedules', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const { unitId } = req.params;
   const { schedule_type, cleaning_time, specific_date, days_of_week, interval_weeks } = req.body;
+  if (!cleaning_time) return res.status(400).json({ error: 'الوقت مطلوب.' });
   try {
-    const dev = await prisma.device.findFirst({
-      where: { id, user_id: req.userId }
+    const unit = await prisma.cleaningUnit.findFirst({
+      where: { id: Number(unitId), controller: { user_id: req.userId! } }
     });
-    if (!dev) return res.status(404).json({ error: 'Device not found.' });
+    if (!unit) return res.status(404).json({ error: 'الوحدة غير موجودة.' });
 
-    if (!cleaning_time) return res.status(400).json({ error: 'الوقت مطلوب.' });
-
-    let daysStr = null;
-    if (schedule_type === 'weekly' && Array.isArray(days_of_week)) {
-      daysStr = days_of_week.join(',');
-    }
-
-    const newSchedule = await prisma.schedule.create({
+    const schedule = await prisma.schedule.create({
       data: {
-        device_id: id,
+        unit_id: Number(unitId),
         schedule_type: schedule_type || 'weekly',
         cleaning_time,
         specific_date: schedule_type === 'once' ? specific_date : null,
-        days_of_week: daysStr,
-        interval_weeks: schedule_type === 'weekly' ? Number(interval_weeks || 1) : 1
+        days_of_week: days_of_week || null,
+        interval_weeks: Number(interval_weeks || 1)
       }
     });
-    
-    // إرجاع الجدولة بتنسيق مناسب للواجهة الأمامية
-    const formattedSchedule = {
-      ...newSchedule,
-      days_of_week: newSchedule.days_of_week ? newSchedule.days_of_week.split(',').map(Number) : []
-    };
-    res.status(201).json(formattedSchedule);
-  } catch (err) {
-    console.error('[Create Schedule] Error:', err);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-app.get('/api/devices/:id/schedules', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  const { id } = req.params;
-  try {
-    const schedules = await prisma.schedule.findMany({
-      where: { device_id: id },
-      orderBy: { cleaning_time: 'asc' }
-    });
-    
-    const formattedSchedules = schedules.map(s => ({
-      ...s,
-      days_of_week: s.days_of_week ? s.days_of_week.split(',').map(Number) : []
-    }));
-    
-    res.json(formattedSchedules);
+    res.status(201).json(schedule);
   } catch (err) {
     res.status(500).json({ error: 'Database error' });
   }
 });
 
 app.delete('/api/schedules/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  const { id } = req.params;
   try {
-    await prisma.schedule.delete({
-      where: { id: Number(id) }
-    });
-    res.json({ success: true, message: 'Schedule deleted.' });
+    await prisma.schedule.delete({ where: { id: Number(req.params.id) } });
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Database error' });
   }
 });
 
-// هـ. الحصول على السجلات (Cleaning Logs)
-app.get('/api/devices/:id/logs', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  const { id } = req.params;
+app.put('/api/schedules/:id/toggle', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const scheduleId = Number(req.params.id);
+  if (isNaN(scheduleId)) return res.status(400).json({ error: 'Invalid schedule ID' });
+  
+  try {
+    const schedule = await prisma.schedule.findUnique({
+      where: { id: scheduleId },
+      include: {
+        unit: {
+          include: {
+            controller: true
+          }
+        }
+      }
+    });
+
+    if (!schedule) {
+      return res.status(404).json({ error: 'الجدول غير موجود.' });
+    }
+
+    if (!schedule.unit || !schedule.unit.controller || schedule.unit.controller.user_id !== req.userId) {
+      return res.status(403).json({ error: 'غير مصرح لك بالوصول إلى هذا الجدول.' });
+    }
+
+    const newStatus = schedule.is_active === 1 ? 0 : 1;
+    const updated = await prisma.schedule.update({
+      where: { id: scheduleId },
+      data: { is_active: newStatus }
+    });
+
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// =============================================================
+//  8. Logs Endpoints
+// =============================================================
+
+app.get('/api/units/:unitId/logs', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const { unitId } = req.params;
   try {
     const logs = await prisma.cleaningLog.findMany({
-      where: { device_id: id },
+      where: { unit_id: Number(unitId) },
       orderBy: { created_at: 'desc' },
       take: 50
     });
@@ -575,94 +410,163 @@ app.get('/api/devices/:id/logs', authenticateToken, async (req: AuthenticatedReq
   }
 });
 
-// --- 4. مؤقت الجدولة التلقائي (Cron Scheduler) ---
+// =============================================================
+//  9. Admin Endpoints
+// =============================================================
+
+// جلب جميع المستخدمين
+app.get('/api/admin/users', authenticateToken, requireAdmin, async (_req, res: Response) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true, name: true, username: true, role: true,
+        is_active: true, created_at: true,
+        _count: { select: { controllers: true } }
+      },
+      orderBy: { id: 'asc' }
+    });
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// تعديل مستخدم
+app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { name, username, role, password, is_active } = req.body;
+  const userId = parseInt(req.params.id);
+  if (isNaN(userId)) return res.status(400).json({ error: 'Invalid ID' });
+  try {
+    const data: any = {};
+    if (name !== undefined) data.name = name;
+    if (username !== undefined) data.username = username;
+    if (role !== undefined) data.role = role;
+    if (is_active !== undefined) data.is_active = is_active;
+    if (password) data.password_hash = await bcrypt.hash(password, 10);
+    const updated = await prisma.user.update({ where: { id: userId }, data });
+    res.json({ success: true, user: updated });
+  } catch (err) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// حذف مستخدم
+app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = parseInt(req.params.id);
+  if (req.userId === userId) return res.status(400).json({ error: 'لا يمكنك حذف حسابك الخاص.' });
+  try {
+    await prisma.user.delete({ where: { id: userId } });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// جلب جميع المتحكمات (Admin)
+app.get('/api/admin/controllers', authenticateToken, requireAdmin, async (_req, res: Response) => {
+  try {
+    const controllers = await prisma.controller.findMany({
+      include: {
+        user: { select: { id: true, name: true, username: true } },
+        units: { orderBy: { port_number: 'asc' } }
+      },
+      orderBy: { name: 'asc' }
+    });
+    res.json(controllers);
+  } catch (err) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// تسجيل متحكم جديد وربطه بمستخدم (Admin)
+app.post('/api/admin/controllers/register', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { id, name, userId } = req.body;
+  if (!id || !name || !userId) return res.status(400).json({ error: 'id, name, userId مطلوبة.' });
+  try {
+    const user = await prisma.user.findUnique({ where: { id: Number(userId) } });
+    if (!user) return res.status(404).json({ error: 'المستخدم غير موجود.' });
+
+    const existing = await prisma.controller.findUnique({ where: { id } });
+    if (existing) {
+      await prisma.controller.update({ where: { id }, data: { user_id: Number(userId), name } });
+    } else {
+      await prisma.controller.create({ data: { id, name, user_id: Number(userId), status: 'offline' } });
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =============================================================
+//  10. Cron: جدولة التنظيف التلقائية
+// =============================================================
 cron.schedule('* * * * *', async () => {
   try {
     const now = new Date();
-    const currentHourMin = now.toTimeString().substring(0, 5); // "08:30"
-    const currentDay = String(now.getDay()); // "0" = Sunday, etc.
+    const currentTime = now.toTimeString().substring(0, 5);
+    const currentDay = String(now.getDay());
+    const currentDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+      .toISOString().split('T')[0];
 
-    // الحصول على التاريخ المحلي الحالي بصيغة "YYYY-MM-DD"
-    const offset = now.getTimezoneOffset();
-    const localDate = new Date(now.getTime() - (offset * 60 * 1000));
-    const currentDateStr = localDate.toISOString().split('T')[0]; // "2026-05-16"
-
-    // جلب كافة الجداول النشطة
-    const activeSchedules = await prisma.schedule.findMany({
+    const schedules = await prisma.schedule.findMany({
       where: { is_active: 1 },
-      include: { device: true }
+      include: { unit: { include: { controller: true } } }
     });
 
-    for (const schedule of activeSchedules) {
-      if (!schedule.device) continue;
-      
-      let shouldRun = false;
+    for (const s of schedules) {
+      if (!s.unit || !s.unit.controller) continue;
+      if (!s.unit.is_installed) continue;
+      if (s.unit.controller.status !== 'online') continue;
 
-      if (schedule.schedule_type === 'once') {
-        // مطابقة التاريخ المحدد للتنظيف لمرة واحدة مع التوقيت
-        if (schedule.specific_date === currentDateStr && schedule.cleaning_time === currentHourMin) {
-          shouldRun = true;
-        }
+      // فحص مستوى الماء قبل الجدولة التلقائية
+      if (s.unit.water_level <= EMERGENCY_STOP_WATER_LEVEL) {
+        console.log(`[CRON] Skipping unit ${s.unit.id}: water too low (${s.unit.water_level}%)`);
+        continue;
+      }
+
+      let shouldRun = false;
+      if (s.schedule_type === 'once') {
+        shouldRun = s.specific_date === currentDate && s.cleaning_time === currentTime;
       } else {
-        // مطابقة الجدولة المتكررة مع مطابقة فواصل الأسابيع (كل X أسابيع)
-        if (schedule.cleaning_time === currentHourMin) {
-          const days = schedule.days_of_week ? schedule.days_of_week.split(',') : [];
-          if (days.includes(currentDay)) {
-            // حساب الفارق بالأسابيع بين تاريخ إنشاء الجدولة وتاريخ اليوم
-            const msInWeek = 7 * 24 * 60 * 60 * 1000;
-            const startWeekDate = new Date(schedule.created_at);
-            startWeekDate.setHours(0, 0, 0, 0);
-            
-            const nowCopy = new Date(now);
-            nowCopy.setHours(0, 0, 0, 0);
-            
-            const diffWeeks = Math.floor((nowCopy.getTime() - startWeekDate.getTime()) / msInWeek);
-            
-            // إذا كان الأسبوع الحالي يتطابق مع فاصل التكرار (مثلاً: كل أسبوعين)
-            if (diffWeeks % schedule.interval_weeks === 0) {
-              shouldRun = true;
-            }
-          }
+        const days = s.days_of_week ? s.days_of_week.split(',') : [];
+        if (s.cleaning_time === currentTime && days.includes(currentDay)) {
+          const msInWeek = 7 * 24 * 60 * 60 * 1000;
+          const diff = Math.floor((now.getTime() - new Date(s.created_at).getTime()) / msInWeek);
+          shouldRun = diff % s.interval_weeks === 0;
         }
       }
 
       if (shouldRun) {
-        if (schedule.device.status === 'online') {
-          console.log(`Cron: Automatic cleaning triggered for device: ${schedule.device_id}`);
-          mqttClient.publish(`device/${schedule.device_id}/commands`, 'START_CLEAN');
-          
-          await prisma.cleaningLog.create({
-            data: {
-              device_id: schedule.device_id,
-              triggered_by: 'timer',
-              status: 'success'
-            }
-          });
+        console.log(`[CRON] Triggering unit ${s.unit.id} on controller ${s.unit.controller_id}`);
+        sendCommand(s.unit.controller_id, s.unit.port_number, 'START_CLEAN');
 
-          // إذا كانت الجدولة لمرة واحدة، نقوم بتعطيلها لكي لا تتكرر
-          if (schedule.schedule_type === 'once') {
-            await prisma.schedule.update({
-              where: { id: schedule.id },
-              data: { is_active: 0 }
-            });
-          }
+        await prisma.cleaningLog.create({
+          data: { unit_id: s.unit.id, triggered_by: 'schedule', status: 'CLEANING' }
+        });
+
+        if (s.schedule_type === 'once') {
+          await prisma.schedule.update({ where: { id: s.id }, data: { is_active: 0 } });
         }
       }
     }
-  } catch (error) {
-    console.error('Error running automatic scheduling cron job:', error);
+  } catch (err) {
+    console.error('[CRON] Error:', err);
   }
 });
 
-// --- 5. تشغيل السيرفر بعد تهيئة قاعدة البيانات ---
+// =============================================================
+//  11. Start Server
+// =============================================================
 async function startServer() {
   try {
     await initializeDatabase();
     app.listen(PORT, () => {
-      console.log(`Solar Cleaning SaaS Server running on port ${PORT}`);
+      console.log(`[SERVER] Running on port ${PORT}`);
+      console.log(`[SERVER] Emergency stop threshold: ${EMERGENCY_STOP_WATER_LEVEL}%`);
     });
   } catch (err) {
-    console.error('Failed to start server due to database error:', err);
+    console.error('[SERVER] Failed to start:', err);
     process.exit(1);
   }
 }

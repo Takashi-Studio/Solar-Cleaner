@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LogIn, Mail, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { LogIn, User, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { API_URL } from '../config';
 
 interface LoginProps {
@@ -8,7 +8,7 @@ interface LoginProps {
 }
 
 export const Login: React.FC<LoginProps> = ({ onLogin, onNavigateToRegister }) => {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -23,7 +23,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onNavigateToRegister }) =
       const response = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ username, password }),
       });
 
       const data = await response.json();
@@ -51,7 +51,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onNavigateToRegister }) =
             <LogIn size={32} />
           </div>
           <h2 className="text-3xl font-extrabold text-white tracking-wide">تسجيل الدخول</h2>
-          <p className="text-slate-400 text-sm mt-2">مرحباً بك في نظام تنظيف الألواح الشمسية الذكي</p>
+          <p className="text-slate-400 text-sm mt-2">مرحباً بك في نظام ABW System</p>
         </div>
 
         {error && (
@@ -63,18 +63,18 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onNavigateToRegister }) =
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">البريد الإلكتروني</label>
+            <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">اسم المستخدم</label>
             <div className="relative">
               <span className="absolute inset-y-0 right-4 flex items-center text-slate-500">
-                <Mail size={18} />
+                <User size={18} />
               </span>
               <input
-                type="email"
+                type="text"
                 required
                 className="w-full pl-4 pr-12 py-3.5 bg-slate-900/50 border border-slate-700/50 rounded-2xl focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none text-white text-sm transition-all placeholder:text-slate-600"
-                placeholder="name@domain.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                placeholder="أدخل اسم المستخدم"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
               />
             </div>
           </div>

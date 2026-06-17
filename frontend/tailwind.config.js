@@ -7,6 +7,9 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['Cairo', 'Outfit', 'sans-serif'],
+      },
       colors: {
         darkBg: '#0f172a',
         darkCard: '#1e293b',

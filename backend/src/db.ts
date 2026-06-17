@@ -11,7 +11,7 @@ export async function initializeDatabase() {
 
     // إنشاء مستخدم أدمن افتراضي إذا لم يكن موجوداً
     const adminExists = await prisma.user.findUnique({
-      where: { email: 'admin@solar.com' }
+      where: { username: 'admin' }
     });
     if (!adminExists) {
       const defaultAdminPassword = 'adminPassword123';
@@ -19,14 +19,14 @@ export async function initializeDatabase() {
       await prisma.user.create({
         data: {
           name: 'System Admin',
-          email: 'admin@solar.com',
+          username: 'admin',
           password_hash: hash,
           role: 'ADMIN'
         }
       });
       console.log('--------------------------------------------------');
       console.log('Default Admin User Created successfully!');
-      console.log('Email: admin@solar.com');
+      console.log('Username: admin');
       console.log('Password: adminPassword123');
       console.log('Please change this default password in settings.');
       console.log('--------------------------------------------------');
