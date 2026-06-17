@@ -471,8 +471,8 @@ int measureWaterLevel(CleaningUnit &unit, bool &sensorOk) {
   // انتظار الصدى بحد أقصى 30 مللي ثانية
   long duration = pulseIn(unit.pinEcho, HIGH, 30000);
 
-  if (duration == 0) {
-    // لا يوجد صدى = الحساس غير موصل أو خارج النطاق
+  if (duration <= 80) {
+    // النبضات القصيرة جداً هي تشويش كهربائي ناتج عن قرب الدبابيس وعم توصيل حساس فعلي
     sensorOk = false;
     return 0;
   }
