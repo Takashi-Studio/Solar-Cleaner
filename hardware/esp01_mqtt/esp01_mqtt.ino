@@ -7,11 +7,8 @@
 // إعدادات افتراضية (يمكن تغييرها من خلال صفحة الإعدادات Captive Portal)
 char mqtt_server[40] = "161.97.152.98";
 char mqtt_port[6] = "1883";
-char device_id[20] = ""; // سيتم توليده تلقائياً من الـ Chip ID الخاص بالجهاز
-
-// مواضيع الـ MQTT
-char topic_commands[50];
-char topic_status[50];
+char device_id[20] = ""; // معرّف الهاردوير الفريد لقطعة الواي فاي (Hex Chip ID)
+String current_controller_id = ""; // معرّف الأردوينو ميقا (يُكتشف تلقائياً من رسائل الأردوينو)
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -24,8 +21,50 @@ void saveConfigCallback () {
   shouldSaveConfig = true;
 }
 
+// دالة استقبال رسائل الـ MQTT من السيرفر
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  // تمرير الأمر مباشرة إلى الأردوينو ميقا عبر Serial كـ JSON
+  for (unsigned int i = 0; i < length; i++) {
+    Serial.write((char)payload[i]);
+  }
+  Serial.println(); // سطر جديد لتفعيل القراءة في الأردوينو
+}
+
+// إعادة الاتصال بسيرفر MQTT في حال انقطاع الاتصال
+void reconnectMQTT() {
+  while (!client.connected()) {
+    Serial.println("I:Attempting MQTT connection...");
+    
+    String activeId = (current_controller_id.length() > 0) ? current_controller_id : String(device_id);
+    
+    // إعداد موضوع الحالة والوصية الأخيرة
+    char topic_telemetry[60];
+    snprintf(topic_telemetry, sizeof(topic_telemetry), "controller/%s/telemetry", activeId.c_str());
+    
+    String willMessage = "{\"controller\":\"" + activeId + "\",\"status\":\"offline\"}";
+    
+    if (client.connect(device_id, device_id, NULL, topic_telemetry, 1, true, willMessage.c_str())) {
+      Serial.println("I:MQTT Connected");
+      
+      // الاشتراك في موضوع استقبال الأوامر
+      char topic_commands[60];
+      snprintf(topic_commands, sizeof(topic_commands), "controller/%s/commands", activeId.c_str());
+      client.subscribe(topic_commands);
+      
+      // نشر حالة الاتصال النشطة
+      String onlineMessage = "{\"controller\":\"" + activeId + "\",\"status\":\"online\"}";
+      client.publish(topic_telemetry, onlineMessage.c_str(), true);
+    } else {
+      Serial.print("E:MQTT Connection Failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" - Retrying in 5 seconds");
+      delay(5000);
+    }
+  }
+}
+
 void setup() {
-  // استخدام منفذ Serial العادي للتخاطب مع الأردوينو ميقا بسرعة 115200
+  // استخدام منفذ Serial للتخاطب مع الأردوينو ميقا بسرعة 115200
   Serial.begin(115200);
   delay(100);
 
@@ -40,7 +79,6 @@ void setup() {
   wifiManager.setSaveConfigCallback(saveConfigCallback);
 
   // إضافة حقول إدخال مخصصة لصفحة الـ Captive Portal لإدخل إعدادات السيرفر
-  // (ملاحظة: تم إلغاء حقل الـ Device ID هنا لمنع المستخدم من تعيينه أو تعديله يدوياً)
   WiFiManagerParameter custom_mqtt_server("server", "MQTT Broker IP (VPS)", mqtt_server, 40);
   WiFiManagerParameter custom_mqtt_port("port", "MQTT Port", mqtt_port, 6);
 
@@ -63,10 +101,6 @@ void setup() {
   strcpy(mqtt_server, custom_mqtt_server.getValue());
   strcpy(mqtt_port, custom_mqtt_port.getValue());
 
-  // إعداد مواضيع MQTT بناءً على معرّف الجهاز
-  snprintf(topic_commands, sizeof(topic_commands), "device/%s/commands", device_id);
-  snprintf(topic_status, sizeof(topic_status), "device/%s/status", device_id);
-
   // إعداد خادم الـ MQTT
   int port = atoi(mqtt_port);
   client.setServer(mqtt_server, port);
@@ -75,45 +109,6 @@ void setup() {
   Serial.print("I:Device ID: ");
   Serial.println(device_id);
   Serial.println("I:WiFi Connected");
-}
-
-// دالة استقبال رسائل الـ MQTT من السيرفر
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  // تحويل الحمولة (Payload) إلى نص
-  String message = "";
-  for (unsigned int i = 0; i < length; i++) {
-    message += (char)payload[i];
-  }
-
-  // إرسال الأمر مباشرة إلى الأردوينو ميقا عبر منفذ Serial
-  // صيغة الرسالة المرسلة للأردوينو: C:COMMAND (مثال: C:START_CLEAN أو C:STOP_CLEAN)
-  Serial.print("C:");
-  Serial.println(message);
-}
-
-// إعادة الاتصال بسيرفر MQTT في حال انقطاع الاتصال
-void reconnectMQTT() {
-  while (!client.connected()) {
-    // إرسال حالة الاتصال للأردوينو للتوضيح
-    Serial.println("I:Attempting MQTT connection...");
-    
-    // إنشاء اتصال مع تحديد رسالة "الوصية الأخيرة" (Last Will) لتعريف السيرفر إذا انقطع الجهاز فجأة
-    String willTopic = "device/" + String(device_id) + "/status";
-    String willMessage = "{\"status\":\"offline\"}";
-    
-    if (client.connect(device_id, device_id, NULL, willTopic.c_str(), 1, true, willMessage.c_str())) {
-      Serial.println("I:MQTT Connected");
-      // الاشتراك في موضوع استقبال الأوامر
-      client.subscribe(topic_commands);
-      // نشر حالة الاتصال النشطة
-      client.publish(topic_status, "{\"status\":\"online\"}", true);
-    } else {
-      Serial.print("E:MQTT Connection Failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" - Retrying in 5 seconds");
-      delay(5000);
-    }
-  }
 }
 
 void loop() {
@@ -128,23 +123,40 @@ void loop() {
     String incomingData = Serial.readStringUntil('\n');
     incomingData.trim();
 
-    // نتحقق من نوع البيانات المرسلة من الأردوينو:
-    // إذا بدأت بـ "W:" تعني إرسال مستوى مياه الخزان
-    // إذا بدأت بـ "S:" تعني إرسال حالة التشغيل (مثلاً: S:CLEANING_DONE أو S:CLEANING_IN_PROGRESS)
-    if (incomingData.startsWith("W:") || incomingData.startsWith("S:")) {
-      String payload = "";
-      if (incomingData.startsWith("W:")) {
-        String level = incomingData.substring(2);
-        payload = "{\"water_level\":" + level + ", \"status\":\"online\"}";
-      } else if (incomingData.startsWith("S:")) {
-        String state = incomingData.substring(2);
-        payload = "{\"state\":\"" + state + "\", \"status\":\"online\"}";
+    if (incomingData.length() > 0 && incomingData.startsWith("{")) {
+      // استكشاف معرف الأردوينو ميقا تلقائياً من خلال الـ JSON لتحديث موضوع الاشتراك
+      int startIdx = incomingData.indexOf("\"controller\":\"");
+      if (startIdx != -1) {
+        startIdx += 14;
+        int endIdx = incomingData.indexOf("\"", startIdx);
+        if (endIdx != -1) {
+          String detectedId = incomingData.substring(startIdx, endIdx);
+          if (detectedId != current_controller_id) {
+            // إلغاء الاشتراك القديم إذا كان موجوداً
+            if (current_controller_id.length() > 0) {
+              char old_topic_commands[60];
+              snprintf(old_topic_commands, sizeof(old_topic_commands), "controller/%s/commands", current_controller_id.c_str());
+              client.unsubscribe(old_topic_commands);
+            }
+            
+            current_controller_id = detectedId;
+            
+            // الاشتراك في موضوع الأوامر الجديد
+            char new_topic_commands[60];
+            snprintf(new_topic_commands, sizeof(new_topic_commands), "controller/%s/commands", current_controller_id.c_str());
+            client.subscribe(new_topic_commands);
+            
+            Serial.print("I:Linked to controller: ");
+            Serial.println(current_controller_id);
+          }
+        }
       }
-      
-      // نشر البيانات في موضوع الحالة الخاص بالجهاز على السيرفر
-      if (payload.length() > 0) {
-        client.publish(topic_status, payload.c_str());
-      }
+
+      // تمرير الـ JSON المستلم مباشرة كما هو إلى السيرفر عبر MQTT
+      String activeId = (current_controller_id.length() > 0) ? current_controller_id : String(device_id);
+      char topic_telemetry[60];
+      snprintf(topic_telemetry, sizeof(topic_telemetry), "controller/%s/telemetry", activeId.c_str());
+      client.publish(topic_telemetry, incomingData.c_str());
     }
   }
 }
