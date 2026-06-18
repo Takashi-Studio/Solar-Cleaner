@@ -465,8 +465,8 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req: 
   }
 });
 
-// جلب جميع المتحكمات (Admin)
-app.get('/api/admin/controllers', authenticateToken, requireAdmin, async (_req, res: Response) => {
+// جلب جميع المتحكمات/الأجهزة (Admin)
+app.get(['/api/admin/controllers', '/api/admin/devices'], authenticateToken, requireAdmin, async (_req, res: Response) => {
   try {
     const controllers = await prisma.controller.findMany({
       include: {
@@ -475,14 +475,30 @@ app.get('/api/admin/controllers', authenticateToken, requireAdmin, async (_req, 
       },
       orderBy: { name: 'asc' }
     });
-    res.json(controllers);
+
+    // دمج حالة مستوى الماء وحالة التشغيل من الوحدات التابعة للمتحكم لكي تتطابق مع متطلبات الواجهة الأمامية
+    const mapped = controllers.map(c => {
+      const firstUnit = c.units[0];
+      return {
+        id: c.id,
+        name: c.name,
+        status: c.status,
+        last_seen: c.last_seen,
+        user: c.user,
+        state: firstUnit ? firstUnit.state : 'IDLE',
+        water_level: firstUnit ? firstUnit.water_level : 0,
+        units: c.units
+      };
+    });
+
+    res.json(mapped);
   } catch (err) {
     res.status(500).json({ error: 'Database error' });
   }
 });
 
-// تسجيل متحكم جديد وربطه بمستخدم (Admin)
-app.post('/api/admin/controllers/register', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+// تسجيل متحكم/جهاز جديد وربطه بمستخدم (Admin)
+app.post(['/api/admin/controllers/register', '/api/devices/register'], authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const { id, name, userId } = req.body;
   if (!id || !name || !userId) return res.status(400).json({ error: 'id, name, userId مطلوبة.' });
   try {
@@ -498,6 +514,38 @@ app.post('/api/admin/controllers/register', authenticateToken, requireAdmin, asy
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// إلغاء ربط وحذف متحكم/جهاز (Admin)
+app.delete(['/api/admin/controllers/:id', '/api/devices/:id'], authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  try {
+    const existing = await prisma.controller.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ error: 'المتحكم غير موجود.' });
+
+    await prisma.controller.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Database error: ' + err.message });
+  }
+});
+
+// فحص اتصال متحكم/جهاز فوري (Admin)
+app.post(['/api/admin/controllers/:id/check-connection', '/api/devices/:id/check-connection'], authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  try {
+    const controller = await prisma.controller.findUnique({ where: { id } });
+    if (!controller) return res.status(404).json({ error: 'المتحكم غير موجود.' });
+
+    // إرسال أمر PING للقطعة عبر MQTT للتأكد من استجابتها
+    mqttClient.publish(`controller/${id}/commands`, JSON.stringify({ cmd: 'PING' }));
+
+    // تحديد ما إذا كان متصلاً بناءً على آخر ظهور وحالة الاتصال
+    const isOnline = controller.status === 'online' && (Date.now() - new Date(controller.last_seen).getTime() < 45000);
+    res.json({ status: isOnline ? 'online' : 'offline', last_seen: controller.last_seen });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Database error: ' + err.message });
   }
 });
 
