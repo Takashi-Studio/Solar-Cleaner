@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # 1. وسيط الـ MQTT (Mosquitto)
+  mqtt-broker:
+    build:
+      context: ./mosquitto-config
+      dockerfile: Dockerfile
+    container_name: solar-mqtt-broker
+    ports:
+      - "1883:1883"
+    networks:
+      - coolify
+    restart: always
+
+  # 2. خادم الـ Backend (Node.js + PostgreSQL + Prisma)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: solar-backend
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=super_secret_jwt_token_solar_panels_cleaning_saas
+      - MQTT_BROKER_URL=mqtt://mqtt-broker:1883
+    depends_on:
+      - mqtt-broker
+    networks:
+      - coolify
+    restart: always
+
+  # 3. واجهة الويب الـ Frontend (React + Nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: solar-frontend
+    expose:
+      - "80"
+    depends_on:
+      - backend
+    networks:
+      - coolify
+    restart: always
+
+networks:
+  coolify:
+    external: true

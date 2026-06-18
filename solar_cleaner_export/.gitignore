@@ -1,0 +1,34 @@
+# Dependency directories
+node_modules/
+
+# Build outputs
+dist/
+build/
+.cache/
+
+# Databases
+*.sqlite
+*.db
+database.sqlite-journal
+
+# Secrets & Environment variables
+.env
+.env.local
+.env.*.local
+*.pem
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Agent directories
+.agents/
