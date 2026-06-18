@@ -5,6 +5,7 @@
 #include <PubSubClient.h>         // مكتبة الاتصال بـ MQTT
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
+#include <WiFiClientSecure.h>     // مكتبة الاتصال الآمن بـ HTTPS
 
 #define FIRMWARE_VERSION "1.0.3"
 
@@ -77,11 +78,13 @@ void reconnectMQTT() {
 void checkOTAUpdate() {
   Serial.println("I:Checking for firmware updates...");
   
-  WiFiClient otaClient;
+  WiFiClientSecure otaClient;
+  otaClient.setInsecure(); // تجاهل التحقق من شهادة الـ SSL لتسهيل الاتصال بـ HTTPS
+  
   HTTPClient http;
   
   // بناء الرابط لقراءة إصدار التحديث المتوفر على السيرفر
-  String versionUrl = "http://" + String(mqtt_server) + ":5000/firmware/version.txt";
+  String versionUrl = "https://api.solar.dev.takashi-studio.com/firmware/version.txt";
   
   if (http.begin(otaClient, versionUrl)) {
     int httpCode = http.GET();
@@ -95,7 +98,7 @@ void checkOTAUpdate() {
         Serial.println("] detected! Starting OTA Update...");
         
         // بناء رابط تحميل كود التحديث البرمجي الجديد
-        String binaryUrl = "http://" + String(mqtt_server) + ":5000/firmware/latest.bin";
+        String binaryUrl = "https://api.solar.dev.takashi-studio.com/firmware/latest.bin";
         
         // محاولة تحميل وتثبيت التحديث
         t_httpUpdate_return ret = ESPhttpUpdate.update(otaClient, binaryUrl);
@@ -128,8 +131,8 @@ void checkOTAUpdate() {
 }
 
 void setup() {
-  // استخدام منفذ Serial للتخاطب مع الأردوينو ميقا بسرعة 115200
-  Serial.begin(115200);
+  // استخدام منفذ Serial للتخاطب مع الأردوينو ميقا بسرعة 9600
+  Serial.begin(9600);
   delay(100);
 
   // توليد معرف فريد للجهاز بناءً على Chip ID الخاص بـ ESP8266 بصيغة ست عشرية (Hexadecimal)
