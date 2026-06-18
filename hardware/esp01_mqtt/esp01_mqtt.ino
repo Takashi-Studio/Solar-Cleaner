@@ -6,7 +6,7 @@
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
 
-#define FIRMWARE_VERSION "1.0.0"
+#define FIRMWARE_VERSION "1.0.1"
 
 // إعدادات افتراضية (يمكن تغييرها من خلال صفحة الإعدادات Captive Portal)
 char mqtt_server[40] = "161.97.152.98";
@@ -143,20 +143,20 @@ void setup() {
   const char* custom_html_head = 
     "<link href='https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap' rel='stylesheet'>"
     "<style>"
-    "body { background: #0a0f1a; color: #e2e8f0; font-family: 'Cairo', sans-serif; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; direction: rtl; }"
-    "div { background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); padding: 30px; border-radius: 20px; box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.5); width: 100%; max-width: 420px; box-sizing: border-box; }"
-    "h1, h2, h3 { color: #60a5fa; text-align: center; font-weight: 700; margin-top: 0; margin-bottom: 20px; font-size: 24px; text-shadow: 0 0 10px rgba(96, 165, 250, 0.3); }"
-    "input[type='text'], input[type='password'] { width: 100%; padding: 14px; margin: 12px 0; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 10px; background: rgba(255, 255, 255, 0.04); color: #fff; font-size: 16px; box-sizing: border-box; transition: all 0.3s ease; text-align: center; }"
-    "input[type='text']:focus, input[type='password']:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25); outline: none; background: rgba(255, 255, 255, 0.08); }"
-    "button, input[type='submit'] { width: 100%; padding: 14px; margin: 15px 0; border: none; border-radius: 10px; background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: #fff; font-weight: 700; font-size: 16px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(29, 78, 216, 0.4); font-family: 'Cairo', sans-serif; }"
-    "button:hover, input[type='submit']:hover { background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(37, 99, 235, 0.5); }"
-    "button:active, input[type='submit']:active { transform: translateY(0); }"
-    "a { color: #60a5fa; text-decoration: none; display: block; text-align: center; margin-top: 20px; font-weight: 600; transition: color 0.2s ease; }"
-    "a:hover { color: #93c5fd; text-decoration: underline; }"
-    "a[href='#p'] { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); padding: 12px 16px; border-radius: 10px; color: #e2e8f0; text-align: right; margin: 10px 0; display: flex; justify-content: space-between; align-items: center; transition: all 0.2s ease; text-decoration: none; }"
-    "a[href='#p']:hover { background: rgba(59, 130, 246, 0.12); border-color: #3b82f6; color: #fff; transform: scale(1.02); }"
-    "span.q { font-size: 14px; color: #94a3b8; font-weight: bold; margin-right: auto; }"
-    "div.msg { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: #fca5a5; padding: 12px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-size: 14px; }"
+    "body { background: #0a0f1a; color: #e2e8f0; font-family: 'Cairo', sans-serif; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }"
+    ".c { background: rgba(15, 23, 42, 0.75) !important; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08) !important; padding: 30px !important; border-radius: 20px !important; box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.5) !important; width: 100% !important; max-width: 420px !important; box-sizing: border-box !important; display: inline-block !important; text-align: center !important; }"
+    "h1, h2, h3 { color: #60a5fa !important; text-align: center !important; font-weight: 700 !important; margin-top: 0 !important; margin-bottom: 20px !important; font-size: 24px !important; text-shadow: 0 0 10px rgba(96, 165, 250, 0.3) !important; }"
+    "input[type='text'], input[type='password'] { width: 100% !important; padding: 14px !important; margin: 12px 0 !important; border: 1px solid rgba(255, 255, 255, 0.15) !important; border-radius: 10px !important; background: rgba(255, 255, 255, 0.04) !important; color: #fff !important; font-size: 16px !important; box-sizing: border-box !important; transition: all 0.3s ease !important; text-align: center !important; }"
+    "input[type='text']:focus, input[type='password']:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25) !important; outline: none !important; background: rgba(255, 255, 255, 0.08) !important; }"
+    "button, input[type='submit'] { width: 100% !important; padding: 14px !important; margin: 15px 0 !important; border: none !important; border-radius: 10px !important; background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%) !important; color: #fff !important; font-weight: 700 !important; font-size: 16px !important; cursor: pointer !important; transition: all 0.3s ease !important; box-shadow: 0 4px 15px rgba(29, 78, 216, 0.4) !important; font-family: 'Cairo', sans-serif !important; }"
+    "button:hover, input[type='submit']:hover { background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%) !important; transform: translateY(-2px) !important; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.5) !important; }"
+    "button:active, input[type='submit']:active { transform: translateY(0) !important; }"
+    "a { color: #60a5fa !important; text-decoration: none !important; display: block !important; text-align: center !important; margin-top: 20px !important; font-weight: 600 !important; transition: color 0.2s ease !important; }"
+    "a:hover { color: #93c5fd !important; text-decoration: underline !important; }"
+    "a[href='#p'] { background: rgba(255, 255, 255, 0.03) !important; border: 1px solid rgba(255, 255, 255, 0.08) !important; padding: 12px 16px !important; border-radius: 10px !important; color: #e2e8f0 !important; text-align: left !important; margin: 10px 0 !important; display: flex !important; justify-content: space-between !important; align-items: center !important; transition: all 0.2s ease !important; text-decoration: none !important; }"
+    "a[href='#p']:hover { background: rgba(59, 130, 246, 0.12) !important; border-color: #3b82f6 !important; color: #fff !important; transform: scale(1.02) !important; }"
+    "span.q { font-size: 14px !important; color: #94a3b8 !important; font-weight: bold !important; margin-left: auto !important; }"
+    "div.msg { background: rgba(239, 68, 68, 0.1) !important; border: 1px solid rgba(239, 68, 68, 0.2) !important; color: #fca5a5 !important; padding: 12px !important; border-radius: 8px !important; margin-bottom: 15px !important; text-align: center !important; font-size: 14px !important; }"
     "</style>";
   wifiManager.setCustomHeadElement(custom_html_head);
 
