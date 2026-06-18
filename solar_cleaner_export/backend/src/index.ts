@@ -16,7 +16,11 @@ app.use(express.json());
 app.use('/firmware', express.static(path.join(__dirname, '../firmware')));
 
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'secret';
+const JWT_SECRET = process.env.JWT_SECRET as string;
+if (!JWT_SECRET) {
+  console.error('[FATAL] JWT_SECRET environment variable is not defined!');
+  process.exit(1);
+}
 const MQTT_BROKER_URL = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883';
 
 // حد الإيقاف الطارئ التلقائي لمستوى الماء (%)
