@@ -7,7 +7,7 @@
 #include <ESP8266httpUpdate.h>
 #include <WiFiClientSecure.h>     // مكتبة الاتصال الآمن بـ HTTPS
 
-#define FIRMWARE_VERSION "1.0.4"
+#define FIRMWARE_VERSION "1.0.5"
 
 // تحديث سرعة الاتصال لتفادي تشويه البيانات (9600)
 // إعدادات افتراضية (يمكن تغييرها من خلال صفحة الإعدادات Captive Portal)
@@ -147,6 +147,10 @@ void setup() {
   Serial.begin(9600);
   delay(100);
 
+  // طباعة إصدار البرنامج مباشرة عند الإقلاع
+  Serial.print("I:Firmware Version: ");
+  Serial.println(FIRMWARE_VERSION);
+
   // توليد معرف فريد للجهاز بناءً على Chip ID الخاص بـ ESP8266 بصيغة ست عشرية (Hexadecimal)
   uint32_t chipId = ESP.getChipId();
   snprintf(device_id, sizeof(device_id), "%08X", chipId);
@@ -177,7 +181,7 @@ void setup() {
     "document.addEventListener('DOMContentLoaded', function() {"
     "  document.title = 'Solar Cleaner Setup';"
     "  var h2 = document.querySelector('h2');"
-    "  if (h2) h2.innerHTML = 'Solar Cleaner System';"
+    "  if (h2) h2.innerHTML = 'Solar Cleaner System <span style=\"font-size:14px; display:block; opacity:0.7;\">v" FIRMWARE_VERSION "</span>';"
     "});"
     "</script>";
   wifiManager.setCustomHeadElement(custom_html_head);
