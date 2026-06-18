@@ -7,7 +7,7 @@
 #include <ESP8266httpUpdate.h>
 #include <WiFiClientSecure.h>     // مكتبة الاتصال الآمن بـ HTTPS
 
-#define FIRMWARE_VERSION "1.0.3"
+#define FIRMWARE_VERSION "1.0.4"
 
 // تحديث سرعة الاتصال لتفادي تشويه البيانات (9600)
 // إعدادات افتراضية (يمكن تغييرها من خلال صفحة الإعدادات Captive Portal)
@@ -77,6 +77,17 @@ void reconnectMQTT() {
 
 // دالة فحص وتثبيت التحديثات البرمجية لاسلكياً عبر السيرفر (OTA)
 void checkOTAUpdate() {
+  // الانتظار حتى الحصول على عنوان IP صالح واستقرار الاتصال بالإنترنت
+  int retries = 0;
+  while (WiFi.status() != WL_CONNECTED || WiFi.localIP().toString() == "0.0.0.0") {
+    delay(500);
+    retries++;
+    if (retries > 20) { // 10 ثوانٍ كحد أقصى
+      Serial.println("E:WiFi not ready. Skipping OTA.");
+      return;
+    }
+  }
+
   Serial.println("I:Checking for firmware updates...");
   
   WiFiClientSecure otaClient;
