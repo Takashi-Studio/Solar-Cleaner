@@ -121,7 +121,7 @@ graph TD
     B <-->|MQTT Publish/Subscribe| D
     D <-->|MQTT Publish/Subscribe| E
     E <-->|Hardware Serial1| F
-    F -->|Pulse/Dir| G1["⚙️ Stepper Motors (A4988)"]:::hw
+    F -->|PWM / Direction| G1["⚙️ TT Motors 1:48 (L298N)"]:::hw
     F -->|GPIO Control| G2["🚰 12V Water Pump Relay"]:::hw
     F <-->|Trigger/Echo| G3["📏 Water Level Sensor (HC-SR04)"]:::hw
     F <-->|GPIO Interrupt| G4["⏹️ Limit Switches"]:::hw
@@ -140,14 +140,17 @@ graph TD
 | | RX | **TX1 (Pin 18)** | خط الإرسال من الأردوينو إلى ESP |
 | | TX | **RX1 (Pin 19)** | خط الاستقبال إلى الأردوينو من ESP |
 | | CH_PD (EN) | **3.3V** | لتشغيل وتفعيل القطعة |
-| **حساس المسافة (HC-SR04)** | Trig | **Pin 7** | إرسال النبضة الصوتية للماء |
-| | Echo | **Pin 8** | استقبال الصدى |
+| **حساس المسافة (HC-SR04)** | Trig | **Pin 26** | إرسال النبضة الصوتية للماء (منفذ الوحدة 1) |
+| | Echo | **Pin 27** | استقبال الصدى (منفذ الوحدة 1) |
 | | VCC / GND | **5V / GND** | التغذية الكهربائية للحساس |
-| **ريلي مضخة المياه 12V** | Signal / In | **Pin 9** | التحكم بتشغيل وإيقاف مضخة مياه الغسيل |
-| **مفتاح نهاية الشوط (Limit Switch)** | Signal / COM | **Pin 10** | مستشعر نهاية مشوار الذراع التنظيفي |
+| **ريلي مضخة المياه 12V** | Signal / In | **Pin 30** | التحكم بتشغيل وإيقاف مضخة مياه الغسيل (منفذ الوحدة 1) |
+| **مفتاح نهاية الشوط (Limit Switch)** | Signal / COM | **Pin 28 / Pin 29** | سويتش البداية والنهاية لحركة الذراع (منفذ الوحدة 1) |
 | | GND / NO | **GND** | الأرضي |
-| **محرك Stepper 1 (المسح)** | Step / Dir | **Pin 2 / Pin 3** | إشارات الخطوة والاتجاه لدرايفر المحرك الأول |
-| **محرك Stepper 2 (الحركة)** | Step / Dir | **Pin 4 / Pin 5** | إشارات الخطوة والاتجاه لدرايفر المحرك الثاني |
+| **محركات الحركة والمسح (TT Motors 1:48)** | ENA / ENB | **Pin 2 / Pin 3** | التحكم بسرعات المحركات عبر PWM لـ L298N |
+| | IN1, IN2, IN3, IN4 | **Pins 22, 23, 24, 25** | التحكم باتجاه حركة محركات الغسيل والممسحة لـ L298N |
+
+> [!NOTE]
+> المنافذ أعلاه تمثل **وحدة التنظيف الأولى (Port 1)**. للحصول على جدول التوصيلات الكامل لجميع الوحدات الأربع بالتفصيل، يرجى الرجوع لملف [wiring_matrix.md](file:///C:/Users/Takashi%20Sensei/Documents/antigravity/goofy-einstein/wiring_matrix.md).
 
 ---
 
@@ -160,8 +163,7 @@ graph TD
 
 2. **برمجة الأردوينو ميقا 2560:**
    * افتح الملف [arduino_mega.ino](file:///C:/Users/Takashi%20Sensei/Documents/antigravity/goofy-einstein/hardware/arduino_mega/arduino_mega.ino).
-   * تأكد من تثبيت مكتبة `AccelStepper`.
-   * اختر البورد `Arduino Mega or Mega 2560` وارفع الكود عبر منفذ الـ USB مباشرة.
+   * اختر البورد `Arduino Mega or Mega 2560` وارفع الكود عبر منفذ الـ USB مباشرة (لا يحتاج كود الأردوينو لمكتبات خارجية للتحكم بالمحركات).
 
 ---
 
