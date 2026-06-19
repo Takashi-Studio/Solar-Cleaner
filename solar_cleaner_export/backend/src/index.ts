@@ -75,10 +75,19 @@ mqttClient.on('message', async (topic, message) => {
       return;
     }
 
+    const isOffline = payload.status === 'offline';
     await prisma.controller.update({
       where: { id: controllerId },
-      data: { status: 'online', last_seen: new Date() }
+      data: { 
+        status: isOffline ? 'offline' : 'online', 
+        last_seen: isOffline ? controller.last_seen : new Date() 
+      }
     });
+
+    if (isOffline) {
+      console.log(`[MQTT] Controller ${controllerId} marked offline via LWT.`);
+      return;
+    }
 
     // --- تقرير الإقلاع: مزامنة وحدات التنظيف تلقائياً (Plug & Play) ---
     if (payload.type === 'boot' && Array.isArray(payload.units)) {
@@ -545,9 +554,106 @@ app.post(['/api/admin/controllers/:id/check-connection', '/api/devices/:id/check
     // إرسال أمر PING للقطعة عبر MQTT للتأكد من استجابتها
     mqttClient.publish(`controller/${id}/commands`, JSON.stringify({ cmd: 'PING' }));
 
-    // تحديد ما إذا كان متصلاً بناءً على آخر ظهور وحالة الاتصال
+    // تحديد ما إذا كان متصلاً بناءً على آخر ظهور وحالة الاتصال وتحديث قاعدة البيانات إذا تغيرت الحالة
     const isOnline = controller.status === 'online' && (Date.now() - new Date(controller.last_seen).getTime() < 45000);
-    res.json({ status: isOnline ? 'online' : 'offline', last_seen: controller.last_seen });
+    const calculatedStatus = isOnline ? 'online' : 'offline';
+    
+    if (controller.status !== calculatedStatus) {
+      await prisma.controller.update({
+        where: { id },
+        data: { status: calculatedStatus }
+      });
+    }
+
+    res.json({ status: calculatedStatus, last_seen: controller.last_seen });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Database error: ' + err.message });
+  }
+});
+
+// تعديل متحكم (Admin)
+app.put('/api/admin/controllers/:id', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const { name, user_id } = req.body;
+  try {
+    const updated = await prisma.controller.update({
+      where: { id },
+      data: {
+        name,
+        user_id: user_id !== undefined ? (user_id ? Number(user_id) : null) : undefined
+      }
+    });
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Database error: ' + err.message });
+  }
+});
+
+// إيقاف تشغيل جميع وحدات المتحكم (Admin)
+app.post('/api/admin/controllers/:id/stop', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  try {
+    const units = await prisma.cleaningUnit.findMany({ where: { controller_id: id } });
+    for (const unit of units) {
+      sendCommand(id, unit.port_number, 'STOP_CLEAN');
+    }
+    res.json({ success: true, message: `Sent STOP to ${units.length} units.` });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Database error: ' + err.message });
+  }
+});
+
+// تعديل وحدة تنظيف (Admin)
+app.put('/api/admin/units/:unitId', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { unitId } = req.params;
+  const { name, speed, is_installed } = req.body;
+  try {
+    const updated = await prisma.cleaningUnit.update({
+      where: { id: Number(unitId) },
+      data: {
+        name,
+        speed: speed !== undefined ? Number(speed) : undefined,
+        is_installed: is_installed !== undefined ? Boolean(is_installed) : undefined
+      }
+    });
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Database error: ' + err.message });
+  }
+});
+
+// إضافة وحدة تنظيف جديدة يدوياً لمنفذ معين (Admin)
+app.post('/api/admin/controllers/:controllerId/units', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { controllerId } = req.params;
+  const { port_number, name, speed } = req.body;
+  try {
+    const existing = await prisma.cleaningUnit.findFirst({
+      where: { controller_id: controllerId, port_number: Number(port_number) }
+    });
+    if (existing) {
+      return res.status(400).json({ error: 'منفذ التوصيل هذا مستخدم بالفعل.' });
+    }
+    const unit = await prisma.cleaningUnit.create({
+      data: {
+        controller_id: controllerId,
+        port_number: Number(port_number),
+        name,
+        speed: speed ? Number(speed) : 800,
+        is_installed: true
+      }
+    });
+    res.json(unit);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Database error: ' + err.message });
+  }
+});
+
+// حذف وحدة تنظيف يدوياً (Admin)
+app.delete('/api/admin/units/:unitId', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { unitId } = req.params;
+  try {
+    await prisma.cleaningUnit.delete({ where: { id: Number(unitId) } });
+    res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: 'Database error: ' + err.message });
   }

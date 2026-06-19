@@ -172,7 +172,7 @@ void sendStatusUpdate(CleaningUnit &unit, const char* state) {
 // =================================================================
 void setup() {
   Serial.begin(115200);
-  Serial1.begin(115200);
+  Serial1.begin(9600);
 
   Serial.println("[BOOT] Initializing system and auto-detecting units...");
 

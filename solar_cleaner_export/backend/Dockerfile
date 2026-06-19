@@ -18,5 +18,6 @@ COPY package*.json ./
 COPY prisma ./prisma/
 RUN npm install --only=production
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/firmware ./firmware
 EXPOSE 5000
 CMD ["sh", "-c", "npx prisma db push --accept-data-loss && node dist/index.js"]
