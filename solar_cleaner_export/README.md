@@ -1,4 +1,4 @@
-# ☀️ نظام تنظيف الألواح الشمسية الذكي (Solar Panel Cleaner SaaS)
+# ☀️ نظام غسيل وتنظيف الألواح الشمسية الذكي (AUTOMATIC BANNING WASHING SYSTEM)
 
 [![Node.js](https://img.shields.io/badge/Backend-Node.js%20%7C%20TypeScript-blue?style=for-the-badge&logo=node.js)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/Frontend-React%20%7C%20Vite%20%7C%20Tailwind-61dafb?style=for-the-badge&logo=react)](https://reactjs.org/)
@@ -6,9 +6,71 @@
 [![MQTT](https://img.shields.io/badge/Broker-Mosquitto%20MQTT-3c5280?style=for-the-badge&logo=eclipse-mosquitto)](https://mosquitto.org/)
 [![Arduino](https://img.shields.io/badge/Hardware-Arduino%20Mega%202560%20%7C%20ESP--01-00979d?style=for-the-badge&logo=arduino)](https://www.arduino.cc/)
 
-نظام متكامل واحترافي لتنظيف ومسح الألواح الشمسية تلقائياً وعن بُعد. يعتمد النظام على عتاد ذكي مبرمج بـ **Arduino Mega** وبوابة اتصال إنترنت مدمجة بـ **ESP-01**، متصل بسيرفر سحابي (SaaS) لإدارة المستخدمين والمتحكمات وجدولة عمليات الغسيل التلقائية ومراقبة مستويات الخزان في الوقت الحقيقي.
+---
+
+## 🎓 معلومات مشروع التخرج (Graduation Project Metadata)
+
+* **اسم المشروع (Project Title)**: AUTOMATIC BANNING WASHING SYSTEM
+* **نوع المشروع (Project Type)**: مشروع تخرج لنيل درجة البكالوريوس في الهندسة (Bachelor of Engineering Graduation Project)
+* **الجامعة وقسم الدراسة (University & Department)**: جامعة حضرموت - كلية الهندسة والبترول - قسم هندسة الحاسوب (Hadhramout University - Computer Engineering Department)
 
 ---
+
+## 📝 تفاصيل وملخص المشروع (Project Overview & Details)
+
+### 📋 نظرة عامة (Project Overview)
+The project focuses on developing an automated cleaning system for solar panels to address the problem of dust and dirt accumulation, which negatively affects energy generation efficiency. The system aims to provide a practical and efficient solution that reduces the need for manual cleaning and improves the overall performance of solar energy systems.
+
+يُركز المشروع على تطوير نظام تنظيف آلي للألواح الشمسية لمعالجة مشكلة تراكم الغبار والأتربة، والتي تؤثر سلباً على كفاءة توليد الطاقة. يهدف النظام إلى تقديم حل عملي وفعال يقلل من الحاجة للتنظيف اليدوي ويحسن الأداء العام لأنظمة الطاقة الشمسية.
+
+### 🎯 هدف المشروع (Project Aim)
+To design and implement an intelligent solar panel cleaning system that can perform cleaning operations automatically while improving operational efficiency and reducing maintenance efforts.
+
+تصميم وتنفيذ نظام ذكي لتنظيف الألواح الشمسية يمكنه إجراء عمليات التنظيف تلقائياً مع تحسين كفاءة التشغيل وتقليل جهود الصيانة الميدانية.
+
+### ⚠️ بيان المشكلة (Problem Statement)
+Solar panels are continuously exposed to dust, dirt, and environmental pollutants. Over time, these contaminants reduce the amount of sunlight reaching the panel surface, resulting in lower energy production. Traditional cleaning methods require significant time, labor, and maintenance costs. Therefore, an automated solution is needed to ensure regular cleaning and maintain optimal performance.
+
+تتعرض الألواح الشمسية باستمرار للغبار والأتربة والملوثات البيئية. ومع مرور الوقت، تقلل هذه الملوثات من كمية ضوء الشمس التي تصل إلى سطح الألواح، مما يؤدي إلى انخفاض إنتاج الطاقة. تتطلب طرق التنظيف التقليدية وقتاً وعمالة وتكاليف صيانة كبيرة. لذلك، هناك حاجة إلى حل آلي لضمان التنظيف المنتظم والحفاظ على الأداء الأمثل.
+
+### 📌 الأهداف الإستراتيجية (Project Objectives)
+* **تطوير نظام تنظيف آلي** للألواح الشمسية (Develop an automated solar panel cleaning system).
+* **تحسين كفاءة** توليد الطاقة الشمسية (Improve the efficiency of solar energy generation).
+* **تقليل متطلبات الصيانة** اليدوية والعمالة (Reduce manual maintenance requirements).
+* **تقليل التكاليف التشغيلية** المرتبطة بالتنظيف (Minimize operational costs associated with panel cleaning).
+* **تقديم حل تنظيف موثوق** وعملي (Provide a reliable and practical cleaning solution).
+* **تعزيز سهولة استخدام النظام** من خلال المراقبة والتحكم عن بُعد (Enhance system usability through remote monitoring and control).
+* **تقييم مدى فعالية النظام** المقترح من خلال الاختبارات الميدانية (Evaluate the effectiveness of the proposed system through testing).
+
+### 🔍 نطاق المشروع (Project Scope)
+The project focuses on the design, implementation, and testing of an automated solar panel cleaning prototype. The system is intended to demonstrate the feasibility of automated cleaning and monitoring within a controlled environment. Large-scale industrial deployment is outside the scope of this project.
+
+يركز المشروع على تصميم وتطبيق واختبار نموذج أولي لتنظيف الألواح الشمسية تلقائياً. يهدف النظام إلى إثبات جدوى التنظيف والمراقبة الآلية ضمن بيئة خاضعة للمراقبة والتحكم، ولا يندرج النشر الصناعي واسع النطاق ضمن نطاق هذا المشروع حالياً.
+
+### 💡 الفوائد المتوقعة (Expected Benefits)
+* زيادة كفاءة الألواح الشمسية وتوليد الطاقة (Increased solar panel efficiency).
+* تقليل تراكم الغبار والملوثات على سطح الألواح (Reduced dust accumulation on panel surfaces).
+* خفض تكاليف الصيانة الدورية (Lower maintenance costs).
+* تقليل الاعتماد على العمالة اليدوية (Reduced dependence on manual labor).
+* تحسين موثوقية التشغيل الكلية للأنظمة (Improved operational reliability).
+* استخدام أفضل للموارد المتجددة (Better utilization of renewable energy resources).
+
+### 👥 المستخدمون المستهدفون (Target Users)
+* أصحاب المنشآت السكنية المعتمدة على الطاقة الشمسية (Residential solar panel owners).
+* محطات ومشاريع الطاقة الشمسية التجارية (Commercial solar energy installations).
+* المؤسسات التعليمية والبحثية لإجراء التجارب (Educational and research institutions).
+* أنظمة الطاقة الشمسية الصغيرة والمتوسطة الحجم (Small and medium-scale solar power systems).
+
+### 🏆 المخرج المتوقع (Expected Outcome)
+A functional prototype capable of automatically supporting solar panel maintenance and demonstrating improved efficiency through regular cleaning operations.
+
+نموذج أولي عملي قادر على دعم صيانة الألواح الشمسية تلقائياً وإثبات كفاءة تشغيل محسنة من خلال عمليات التنظيف المنتظمة.
+
+---
+
+## ⚙️ تفاصيل الباك إند والفرونت إند والعتاد (Technical Implementation)
+
+نظام متكامل واحترافي لتنظيف ومسح الألواح الشمسية تلقائياً وعن بُعد. يعتمد النظام على عتاد ذكي مبرمج بـ **Arduino Mega** وبوابة اتصال إنترنت مدمجة بـ **ESP-01**، متصل بسيرفر سحابي (SaaS) لإدارة المستخدمين والمتحكمات وجدولة عمليات الغسيل التلقائية ومراقبة مستويات الخزان في الوقت الحقيقي.
 
 ## ✨ المميزات الرئيسية (Key Features)
 
