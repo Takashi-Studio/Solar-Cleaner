@@ -7,7 +7,7 @@
 #include <ESP8266httpUpdate.h>
 #include <WiFiClientSecure.h>     // مكتبة الاتصال الآمن بـ HTTPS
 
-#define FIRMWARE_VERSION "1.0.5"
+#define FIRMWARE_VERSION "1.0.6"
 
 // تحديث سرعة الاتصال لتفادي تشويه البيانات (9600)
 // إعدادات افتراضية (يمكن تغييرها من خلال صفحة الإعدادات Captive Portal)
@@ -167,8 +167,8 @@ void setup() {
     "h1, h2, h3 { color: #60a5fa !important; text-align: center !important; font-weight: 700 !important; margin-top: 0 !important; margin-bottom: 20px !important; font-size: 24px !important; text-shadow: 0 0 10px rgba(96, 165, 250, 0.3) !important; }"
     "input[type='text'], input[type='password'] { width: 100% !important; padding: 14px !important; margin: 12px 0 !important; border: 1px solid rgba(255, 255, 255, 0.15) !important; border-radius: 10px !important; background: rgba(255, 255, 255, 0.04) !important; color: #fff !important; font-size: 16px !important; box-sizing: border-box !important; transition: all 0.3s ease !important; text-align: center !important; }"
     "input[type='text']:focus, input[type='password']:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25) !important; outline: none !important; background: rgba(255, 255, 255, 0.08) !important; }"
-    "button, input[type='submit'] { width: 100% !important; padding: 14px !important; margin: 15px 0 !important; border: none !important; border-radius: 10px !important; background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%) !important; color: #fff !important; font-weight: 700 !important; font-size: 16px !important; cursor: pointer !important; transition: all 0.3s ease !important; box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4) !important; font-family: 'Cairo', sans-serif !important; }"
-    "button:hover, input[type='submit']:hover { background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%) !important; transform: translateY(-2px) !important; box-shadow: 0 6px 20px rgba(220, 38, 38, 0.5) !important; }"
+    "button, input[type='submit'] { width: 100% !important; padding: 14px !important; margin: 15px 0 !important; border: none !important; border-radius: 10px !important; background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%) !important; color: #fff !important; font-weight: 700 !important; font-size: 16px !important; cursor: pointer !important; transition: all 0.3s ease !important; box-shadow: 0 4px 15px rgba(29, 78, 216, 0.4) !important; font-family: 'Cairo', sans-serif !important; }"
+    "button:hover, input[type='submit']:hover { background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%) !important; transform: translateY(-2px) !important; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.5) !important; }"
     "button:active, input[type='submit']:active { transform: translateY(0) !important; }"
     "a { color: #60a5fa !important; text-decoration: none !important; display: block !important; text-align: center !important; margin-top: 20px !important; font-weight: 600 !important; transition: color 0.2s ease !important; }"
     "a:hover { color: #93c5fd !important; text-decoration: underline !important; }"
