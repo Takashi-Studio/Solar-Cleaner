@@ -437,6 +437,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
               </button>
             );
           })}
+          
+          <div className="my-2 border-t border-slate-800/40" />
+
+          <button
+            onClick={() => { window.location.hash = '#/hardware-test'; }}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all text-slate-400 hover:bg-slate-900/50 hover:text-white`}
+          >
+            <Zap size={18} />
+            <span>اختبار القطع</span>
+          </button>
         </nav>
 
         {/* Sidebar Footer User Badge */}
@@ -513,6 +523,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
                   </button>
                 );
               })}
+              
+              <div className="my-2 border-t border-slate-800/40" />
+
+              <button
+                onClick={() => { 
+                  window.location.hash = '#/hardware-test';
+                  setMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all text-slate-400 hover:bg-slate-900/50 hover:text-white`}
+              >
+                <Zap size={18} />
+                <span>اختبار القطع</span>
+              </button>
             </nav>
 
             {/* Logout / User in Drawer */}

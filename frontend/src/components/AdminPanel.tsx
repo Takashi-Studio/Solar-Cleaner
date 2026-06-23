@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Users, Cpu, Plus, Trash2, LogOut, Key, UserPlus, 
   Shield, Check, X, AlertTriangle, RefreshCw, LayoutDashboard, Loader2,
-  Eye, EyeOff, LayoutGrid, Activity, ChevronDown, UserCheck, Smartphone, Menu, Pencil, UserX, ChevronRight, Power
+  Eye, EyeOff, LayoutGrid, Activity, ChevronDown, UserCheck, Smartphone, Menu, Pencil, UserX, ChevronRight, Power, Zap
 } from 'lucide-react';
 import { API_URL } from '../config';
 
@@ -783,6 +783,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           <div className="my-2 border-t border-slate-800/40" />
 
           <button
+            onClick={() => { window.location.hash = '#/hardware-test'; }}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all duration-200 text-slate-400 hover:bg-slate-900/50 hover:text-white"
+          >
+            <Zap size={16} />
+            <span>اختبار القطع</span>
+          </button>
+
+          <button
             onClick={onNavigateToDashboard}
             className="flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all duration-200 text-slate-400 hover:bg-slate-900/50 hover:text-white"
           >
@@ -909,6 +917,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
 
             <div className="my-2 border-t border-slate-900" />
+
+            <button
+              onClick={() => { 
+                window.location.hash = '#/hardware-test';
+                setIsMobileSidebarOpen(false);
+              }}
+              className="flex items-center gap-3.5 px-4 py-3 rounded-xl text-xs font-bold transition-all duration-200 text-slate-400 hover:bg-slate-900/50 hover:text-white"
+            >
+              <Zap size={16} />
+              <span>اختبار القطع</span>
+            </button>
 
             <button
               onClick={() => {

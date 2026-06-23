@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Login } from './components/Login';
 import { Dashboard } from './components/Dashboard';
 import { AdminPanel } from './components/AdminPanel';
+import { HardwareTest } from './components/HardwareTest';
 
 export default function App() {
   const [token, setToken] = useState<string | null>(null);
@@ -91,7 +92,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 antialiased overflow-x-hidden">
-      {currentHash.startsWith('#/admin') && user!.role === 'ADMIN' ? (
+      {currentHash.startsWith('#/hardware-test') ? (
+        <HardwareTest 
+          token={token!} 
+          user={user!} 
+          onNavigateBack={() => { window.location.hash = user!.role === 'ADMIN' ? '#/admin/overview' : '#/dashboard'; }}
+        />
+      ) : currentHash.startsWith('#/admin') && user!.role === 'ADMIN' ? (
         <AdminPanel 
           token={token!} 
           user={user!} 
