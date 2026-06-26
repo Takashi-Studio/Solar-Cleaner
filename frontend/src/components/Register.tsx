@@ -52,7 +52,7 @@ export const Register: React.FC<RegisterProps> = ({ onRegisterSuccess, onNavigat
             <UserPlus size={32} />
           </div>
           <h2 className="text-3xl font-extrabold text-white tracking-wide">تسجيل حساب جديد</h2>
-          <p className="text-slate-400 text-sm mt-2">انضم إلينا لإدارة نظام ABW System</p>
+          <p className="text-slate-400 text-sm mt-2">انضم إلينا لإدارة نظام APW System</p>
         </div>
 
         {error && (

@@ -730,7 +730,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <Shield size={22} />
           </div>
           <div>
-            <h2 className="text-base font-black tracking-wide bg-gradient-to-l from-cyan-400 to-white bg-clip-text text-transparent">ABW System</h2>
+            <h2 className="text-base font-black tracking-wide bg-gradient-to-l from-cyan-400 to-white bg-clip-text text-transparent">APW System</h2>
             <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest block mt-0.5">لوحة التحكم للإدارة</span>
           </div>
         </div>
@@ -824,7 +824,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <Shield size={16} />
           </div>
           <span className="text-sm font-black tracking-wide bg-gradient-to-l from-cyan-400 to-white bg-clip-text text-transparent">
-            ABW System
+            APW System
           </span>
         </div>
 
@@ -854,7 +854,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <Shield size={16} />
               </div>
               <span className="text-xs font-black bg-gradient-to-l from-cyan-400 to-white bg-clip-text text-transparent">
-                ABW System
+                APW System
               </span>
             </div>
             <button

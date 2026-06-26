@@ -410,7 +410,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
             <Sun size={18} className="text-white" />
           </div>
           <span className={`text-base font-black bg-gradient-to-l from-cyan-400 to-${isLightTheme ? 'blue-600' : 'white'} bg-clip-text text-transparent`}>
-            ABW System
+            APW System
           </span>
         </div>
 
@@ -487,7 +487,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
                 <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-900/30">
                   <Sun size={16} className="text-white" />
                 </div>
-                <span className={`text-sm font-black ${themeClasses.titleText}`}>ABW System</span>
+                <span className={`text-sm font-black ${themeClasses.titleText}`}>APW System</span>
               </div>
               <button
                 onClick={() => setMobileMenuOpen(false)}
@@ -568,7 +568,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center">
               <Sun size={16} className="text-white" />
             </div>
-            <span className={`text-sm font-black ${themeClasses.titleText}`}>ABW System</span>
+            <span className={`text-sm font-black ${themeClasses.titleText}`}>APW System</span>
           </div>
           
           <div className="flex items-center gap-2">

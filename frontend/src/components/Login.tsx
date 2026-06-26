@@ -51,7 +51,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onNavigateToRegister }) =
             <LogIn size={32} />
           </div>
           <h2 className="text-3xl font-extrabold text-white tracking-wide">تسجيل الدخول</h2>
-          <p className="text-slate-400 text-sm mt-2">مرحباً بك في نظام ABW System</p>
+          <p className="text-slate-400 text-sm mt-2">مرحباً بك في نظام APW System</p>
         </div>
 
         {error && (
