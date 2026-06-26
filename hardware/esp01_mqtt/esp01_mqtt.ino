@@ -5,8 +5,9 @@
 #include <PubSubClient.h>         // مكتبة الاتصال بـ MQTT
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
+#include <WiFiClientSecure.h>     // مكتبة الاتصال الآمن بـ HTTPS
 
-#define FIRMWARE_VERSION "1.1.0" // تنبيه: يجب رفع رقم الإصدار عند إجراء أي تعديل برميجي مستقبلي على هذا الكود
+#define FIRMWARE_VERSION "1.1.1" // تنبيه: يجب رفع رقم الإصدار عند إجراء أي تعديل برميجي مستقبلي على هذا الكود
 
 // تحديث سرعة الاتصال لتفادي تشويه البيانات (9600)
 // إعدادات افتراضية (يمكن تغييرها من خلال صفحة الإعدادات Captive Portal)
@@ -106,12 +107,13 @@ void checkOTAUpdate() {
 
   Serial.println("I:Checking for firmware updates...");
   
-  WiFiClient otaClient;
+  WiFiClientSecure otaClient;
+  otaClient.setInsecure(); // تجاهل التحقق من شهادة الـ SSL لتسهيل الاتصال بـ HTTPS
   
   HTTPClient http;
   
-  // بناء الرابط لقراءة إصدار التحديث المتوفر على السيرفر (HTTP)
-  String versionUrl = "http://api.solar.dev.takashi-studio.com/firmware/version.txt";
+  // بناء الرابط لقراءة إصدار التحديث المتوفر على السيرفر (HTTPS)
+  String versionUrl = "https://api.solar.dev.takashi-studio.com/firmware/version.txt";
   
   if (http.begin(otaClient, versionUrl)) {
     int httpCode = http.GET();
@@ -124,8 +126,8 @@ void checkOTAUpdate() {
         Serial.print(latestVersion);
         Serial.println("] detected! Starting OTA Update...");
         
-        // بناء رابط تحميل كود التحديث البرمجي الجديد (HTTP)
-        String binaryUrl = "http://api.solar.dev.takashi-studio.com/firmware/latest.bin";
+        // بناء رابط تحميل كود التحديث البرمجي الجديد (HTTPS)
+        String binaryUrl = "https://api.solar.dev.takashi-studio.com/firmware/latest.bin";
         
         // محاولة تحميل وتثبيت التحديث
         t_httpUpdate_return ret = ESPhttpUpdate.update(otaClient, binaryUrl);
