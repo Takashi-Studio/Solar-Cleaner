@@ -41,6 +41,20 @@ const EMERGENCY_STOP_WATER_LEVEL = 10;
 const cleaningStartData: Record<number, { level: number; time: number }> = {};
 
 // =============================================================
+//  SSE Clients – بث رسائل MQTT لحظياً إلى المتصفح
+// =============================================================
+type SseClient = { res: Response; id: number };
+let sseClients: SseClient[] = [];
+let sseClientId = 0;
+
+function broadcastMqtt(data: object) {
+  const line = `data: ${JSON.stringify(data)}\n\n`;
+  sseClients.forEach(c => {
+    try { c.res.write(line); } catch {}
+  });
+}
+
+// =============================================================
 //  1. إعداد MQTT Client
 // =============================================================
 const mqttClient = mqtt.connect(MQTT_BROKER_URL);
@@ -74,6 +88,11 @@ function sendCommand(controllerId: string, port: number, cmd: 'START_CLEAN' | 'S
 //  {"type":"status","controller":"ARD-MEGA-001","port":1,"state":"CLEANING"}
 // =============================================================
 mqttClient.on('message', async (topic, message) => {
+  // بث الرسالة الخام لجميع المستمعين عبر SSE فوراً
+  try {
+    broadcastMqtt({ topic, payload: message.toString(), ts: new Date().toISOString() });
+  } catch {}
+
   try {
     const payload = JSON.parse(message.toString());
     const controllerId: string = payload.controller;
@@ -218,7 +237,7 @@ interface AuthenticatedRequest extends Request {
 }
 
 function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  const token = req.headers['authorization']?.split(' ')[1];
+  const token = req.headers['authorization']?.split(' ')[1] || (req.query.token as string);
   if (!token) return res.status(401).json({ error: 'Access token missing' });
   jwt.verify(token, JWT_SECRET, (err, decoded: any) => {
     if (err) return res.status(403).json({ error: 'Token invalid or expired' });
@@ -742,7 +761,33 @@ cron.schedule('* * * * *', async () => {
 });
 
 // =============================================================
+//  10.5 SSE Endpoint – بث رسائل MQTT لحظياً للمتصفح
+// =============================================================
+app.get('/api/admin/mqtt-stream', authenticateToken, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // ضروري لـ Nginx/Coolify
+  res.flushHeaders();
+
+  const id = ++sseClientId;
+  const client: SseClient = { res, id };
+  sseClients.push(client);
+  console.log(`[SSE] Client #${id} connected. Total: ${sseClients.length}`);
+
+  // إرسال رسالة ترحيب أولية
+  res.write(`data: ${JSON.stringify({ type: 'connected', ts: new Date().toISOString() })}\n\n`);
+
+  // تنظيف عند إغلاق الاتصال
+  req.on('close', () => {
+    sseClients = sseClients.filter(c => c.id !== id);
+    console.log(`[SSE] Client #${id} disconnected. Total: ${sseClients.length}`);
+  });
+});
+
+// =============================================================
 //  11. Start Server
+
 // =============================================================
 async function startServer() {
   try {

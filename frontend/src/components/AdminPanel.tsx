@@ -40,7 +40,129 @@ interface DeviceItem {
   units?: any[];
 }
 
-type TabType = 'overview' | 'users' | 'devices' | 'user-devices';
+type TabType = 'overview' | 'users' | 'devices' | 'user-devices' | 'logs';
+
+interface MqttLogMessage {
+  id: string;
+  topic: string;
+  payload: string;
+  timestamp: string;
+}
+
+const MqttLogsPanel: React.FC<{ token: string }> = ({ token }) => {
+  const [logs, setLogs] = useState<MqttLogMessage[]>([]);
+  const [isConnected, setIsConnected] = useState(false);
+  const [filterTopic, setFilterTopic] = useState('');
+  const [filterPayload, setFilterPayload] = useState('');
+
+  useEffect(() => {
+    const sseUrl = `${API_URL.replace(/\/$/, '')}/api/admin/mqtt-stream?token=${token}`;
+    const eventSource = new EventSource(sseUrl);
+
+    eventSource.onopen = () => {
+      setIsConnected(true);
+    };
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'connected') {
+          return;
+        }
+        if (data.topic && data.payload) {
+          const newMsg: MqttLogMessage = {
+            id: Math.random().toString(36).substring(2, 9),
+            topic: data.topic,
+            payload: typeof data.payload === 'object' ? JSON.stringify(data.payload, null, 2) : String(data.payload),
+            timestamp: data.timestamp || new Date().toISOString(),
+          };
+          setLogs((prev) => [newMsg, ...prev].slice(0, 200));
+        }
+      } catch (err) {
+        console.error('Error parsing SSE message:', err);
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error('SSE Error:', err);
+      setIsConnected(false);
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [token]);
+
+  const filteredLogs = logs.filter(log => {
+    const matchesTopic = log.topic.toLowerCase().includes(filterTopic.toLowerCase());
+    const matchesPayload = log.payload.toLowerCase().includes(filterPayload.toLowerCase());
+    return matchesTopic && matchesPayload;
+  });
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-200" dir="rtl">
+      <div className="glass-panel p-6 rounded-3xl border border-slate-900 space-y-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800/40 pb-4">
+          <div>
+            <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+              <span>مراقبة البث المباشر (MQTT)</span>
+            </h2>
+            <p className="text-slate-500 text-xs mt-1">يتم عرض الرسائل التي يتلقاها الخادم من الأجهزة لحظياً ومحلياً في المتصفح فقط</p>
+          </div>
+          <button
+            onClick={() => setLogs([])}
+            className="px-3 py-1.5 bg-slate-900 hover:bg-slate-850 text-slate-400 hover:text-white border border-slate-800 rounded-xl text-xs font-bold transition-all cursor-pointer"
+          >
+            مسح السجل
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-[10px] text-slate-400 font-bold mb-1.5">تصفية حسب العنوان (Topic)</label>
+            <input
+              type="text"
+              value={filterTopic}
+              onChange={(e) => setFilterTopic(e.target.value)}
+              placeholder="مثال: status/ أو telemetry/"
+              className="w-full bg-slate-950/80 border border-slate-900 hover:border-slate-800 focus:border-cyan-500 rounded-xl px-4 py-2 text-xs text-white placeholder-slate-600 outline-none transition-all"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] text-slate-400 font-bold mb-1.5">تصفية حسب المحتوى (Payload)</label>
+            <input
+              type="text"
+              value={filterPayload}
+              onChange={(e) => setFilterPayload(e.target.value)}
+              placeholder="ابحث في محتوى الرسالة..."
+              className="w-full bg-slate-950/80 border border-slate-900 hover:border-slate-800 focus:border-cyan-500 rounded-xl px-4 py-2 text-xs text-white placeholder-slate-600 outline-none transition-all"
+            />
+          </div>
+        </div>
+
+        <div className="bg-slate-950/95 border border-slate-900 rounded-2xl p-4 font-mono text-xs overflow-y-auto max-h-[500px] min-h-[300px] flex flex-col gap-3 text-slate-350">
+          {filteredLogs.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-slate-600 py-12 gap-2">
+              <Activity size={24} className="opacity-40 animate-pulse text-cyan-500" />
+              <span>في انتظار وصول رسائل MQTT...</span>
+            </div>
+          ) : (
+            filteredLogs.map((log) => (
+              <div key={log.id} className="border-b border-slate-900/60 pb-3 last:border-0 text-right">
+                <div className="flex justify-between items-center text-[10px] text-slate-500 mb-1">
+                  <span className="bg-slate-900 px-2 py-0.5 rounded text-cyan-400 font-bold select-all">{log.topic}</span>
+                  <span>{new Date(log.timestamp).toLocaleTimeString()}</span>
+                </div>
+                <pre className="whitespace-pre-wrap break-all text-emerald-400 bg-slate-950/50 p-2 rounded border border-slate-900/40 select-all text-left font-mono">{log.payload}</pre>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ 
   token, 
@@ -66,6 +188,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     activeTab = 'overview';
   } else if (currentHash === '#/admin/users') {
     activeTab = 'users';
+  } else if (currentHash === '#/admin/logs') {
+    activeTab = 'logs';
   } else {
     const match = currentHash.match(/^#\/admin\/users\/(\d+)\/devices$/);
     if (match) {
@@ -778,7 +902,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <span>إدارة المستخدمين</span>
           </button>
 
-
+          <button
+            onClick={() => { window.location.hash = '#/admin/logs'; }}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all duration-200 ${
+              activeTab === 'logs'
+                ? 'bg-gradient-to-l from-cyan-500/15 to-blue-500/5 border-r-2 border-cyan-500 text-cyan-400 shadow-md'
+                : 'text-slate-400 hover:bg-slate-900/50 hover:text-white'
+            }`}
+          >
+            <Activity size={16} />
+            <span>سجل رسائل القطع (MQTT)</span>
+          </button>
 
           <div className="my-2 border-t border-slate-800/40" />
 
@@ -914,7 +1048,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <span>إدارة المستخدمين</span>
             </button>
 
-
+            <button
+              onClick={() => {
+                window.location.hash = '#/admin/logs';
+                setIsMobileSidebarOpen(false);
+              }}
+              className={`flex items-center gap-3.5 px-4 py-3 rounded-xl text-xs font-bold transition-all duration-200 ${
+                activeTab === 'logs'
+                  ? 'bg-gradient-to-l from-cyan-500/15 to-blue-500/5 border-r-2 border-cyan-500 text-cyan-400 font-black shadow-md'
+                  : 'text-slate-400 hover:bg-slate-900/50 hover:text-white'
+              }`}
+            >
+              <Activity size={16} />
+              <span>سجل رسائل القطع (MQTT)</span>
+            </button>
 
             <div className="my-2 border-t border-slate-900" />
 
@@ -968,6 +1115,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               {activeTab === 'overview' && 'لوحة المعلومات الحية والإحصائيات'}
               {activeTab === 'users' && 'لوحة التحكم وإدارة شؤون العملاء'}
               {activeTab === 'user-devices' && 'إدارة الأجهزة والمتحكمات الخاصة بالمشترك'}
+              {activeTab === 'logs' && 'سجل الرسائل المستلمة من الأجهزة (MQTT)'}
             </h1>
             <p className="text-slate-500 text-xs mt-1">تحديث حي ومباشر للنظام</p>
           </div>
@@ -1428,6 +1576,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
 
           </div>
+        )}
+
+        {/* التبويب 4: سجل رسائل MQTT */}
+        {activeTab === 'logs' && (
+          <MqttLogsPanel token={token} />
         )}
 
       </main>
