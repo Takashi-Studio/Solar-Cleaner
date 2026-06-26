@@ -81,7 +81,15 @@ function formatDate(dateStr: string): string {
 }
 
 // ===================== State Badge =====================
-function StateBadge({ state }: { state: string }) {
+function StateBadge({ state, isOffline }: { state: string; isOffline?: boolean }) {
+  if (isOffline) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border bg-slate-800/25 text-slate-500 border-slate-800/40">
+        <WifiOff size={11} />
+        غير متصل
+      </span>
+    );
+  }
   const map: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
     CLEANING: { label: 'يُنظِّف', cls: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30 shadow-[0_0_8px_rgba(6,182,212,0.15)]', icon: <Loader2 size={11} className="animate-spin" /> },
     RETURNING_HOME: { label: 'عائد للبداية', cls: 'bg-amber-500/15 text-amber-400 border-amber-500/30 shadow-[0_0_8px_rgba(245,158,11,0.15)]', icon: <Loader2 size={11} className="animate-spin" /> },
@@ -130,6 +138,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
   const [activeTab, setActiveTab] = useState<'home' | 'units' | 'logs' | 'profile'>('home');
   const [detailUnit, setDetailUnit] = useState<{ unit: CleaningUnit; controllerId: string } | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const drawerCtrl = detailUnit ? controllers.find(c => c.id === detailUnit.controllerId) : null;
+  const isDrawerCtrlOnline = drawerCtrl?.status === 'online';
   
   // Theme State
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -772,6 +783,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
                           const isReturning = unit.state === 'RETURNING_HOME';
                           const isActive = isCleaning || isReturning;
                           const isIdle = unit.state === 'IDLE' || unit.state === 'CLEANING_DONE';
+                          const isCtrlOffline = ctrl.status === 'offline';
                           
                           if (!unit.is_installed) {
                             return (
@@ -798,11 +810,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
                               {/* Card Header */}
                               <div className="flex items-center justify-between px-4 pt-4 pb-2">
                                 <div className="flex items-center gap-2.5">
-                                  <span className={`w-2 h-2 rounded-full ${isCleaning ? 'bg-cyan-400 animate-pulse' : isReturning ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'}`} />
+                                  <span className={`w-2 h-2 rounded-full ${isCtrlOffline ? 'bg-slate-500' : isCleaning ? 'bg-cyan-400 animate-pulse' : isReturning ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'}`} />
                                   <span className={`text-sm font-black ${themeClasses.titleText}`}>{unit.name}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <StateBadge state={unit.state} />
+                                  <StateBadge state={unit.state} isOffline={isCtrlOffline} />
                                 </div>
                               </div>
 
@@ -823,7 +835,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
                                   {/* Start Clean (Play) */}
                                   <button
                                     onClick={() => sendCmd(ctrl.id, unit.id, 'clean')}
-                                    disabled={cmdLoading[unit.id] || isActive || unit.water_level < 15}
+                                    disabled={cmdLoading[unit.id] || isActive || unit.water_level < 15 || isCtrlOffline}
                                     title="بدء التنظيف"
                                     className="w-10 h-10 rounded-full flex items-center justify-center bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 border border-emerald-500/20 disabled:opacity-40 disabled:pointer-events-none transition-all active:scale-90"
                                   >
@@ -837,10 +849,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
                                   {/* Stop Clean (Stop) */}
                                   <button
                                     onClick={() => sendCmd(ctrl.id, unit.id, 'stop')}
-                                    disabled={cmdLoading[unit.id] || isIdle}
+                                    disabled={cmdLoading[unit.id] || isIdle || isCtrlOffline}
                                     title="إيقاف طارئ"
                                     className={`w-10 h-10 rounded-full flex items-center justify-center border transition-all active:scale-90 ${
-                                      isIdle 
+                                      isIdle || isCtrlOffline
                                         ? 'bg-slate-800/10 text-slate-600 border-slate-800/20' 
                                         : 'bg-red-500/20 text-red-400 border-red-500/40 animate-pulse shadow-[0_0_12px_rgba(239,68,68,0.4)] hover:bg-red-500 hover:text-white'
                                     }`}
@@ -1071,7 +1083,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
               <div className="text-center">
                 <h2 className="text-sm font-black">{detailUnit.unit.name}</h2>
                 <div className="mt-1">
-                  <StateBadge state={detailUnit.unit.state} />
+                  <StateBadge state={detailUnit.unit.state} isOffline={!isDrawerCtrlOnline} />
                 </div>
               </div>
               <div className="w-10" /> {/* Spacer to align title center */}
