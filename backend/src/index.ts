@@ -11,7 +11,18 @@ import { prisma, initializeDatabase } from './db';
 import path from 'path';
 
 const app = express();
-app.use(cors());
+
+// إعداد CORS صريح للسماح لجميع النطاقات بما فيها طلبات الـ preflight (OPTIONS)
+const corsOptions = {
+  origin: true,                            // السماح لأي origin
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false,
+  optionsSuccessStatus: 200,
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));       // الرد على جميع طلبات preflight
+
 app.use(express.json());
 app.use('/firmware', express.static(path.join(__dirname, '../firmware')));
 
@@ -282,7 +293,7 @@ app.get('/api/controllers', authenticateToken, async (req: AuthenticatedRequest,
 
     // حساب الحالة الفعلية ديناميكياً بناءً على آخر ظهور (last_seen) خلال 45 ثانية
     const mapped = controllers.map(c => {
-      const isOnline = c.status === 'online' && (Date.now() - new Date(c.last_seen).getTime() < 45000);
+      const isOnline = c.status === 'online' && (Date.now() - new Date(c.last_seen).getTime() < 90000);
       return {
         ...c,
         status: isOnline ? 'online' : 'offline'
@@ -505,7 +516,7 @@ app.get(['/api/admin/controllers', '/api/admin/devices'], authenticateToken, req
     // دمج حالة مستوى الماء وحالة التشغيل من الوحدات التابعة للمتحكم لكي تتطابق مع متطلبات الواجهة الأمامية
     const mapped = controllers.map(c => {
       const firstUnit = c.units[0];
-      const isOnline = c.status === 'online' && (Date.now() - new Date(c.last_seen).getTime() < 45000);
+      const isOnline = c.status === 'online' && (Date.now() - new Date(c.last_seen).getTime() < 90000);
       return {
         id: c.id,
         name: c.name,
@@ -569,7 +580,7 @@ app.post(['/api/admin/controllers/:id/check-connection', '/api/devices/:id/check
     mqttClient.publish(`controller/${id}/commands`, JSON.stringify({ cmd: 'PING' }));
 
     // تحديد ما إذا كان متصلاً بناءً على آخر ظهور وحالة الاتصال وتحديث قاعدة البيانات إذا تغيرت الحالة
-    const isOnline = controller.status === 'online' && (Date.now() - new Date(controller.last_seen).getTime() < 45000);
+    const isOnline = controller.status === 'online' && (Date.now() - new Date(controller.last_seen).getTime() < 90000);
     const calculatedStatus = isOnline ? 'online' : 'offline';
     
     if (controller.status !== calculatedStatus) {
