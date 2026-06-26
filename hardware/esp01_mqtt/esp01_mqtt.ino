@@ -6,7 +6,7 @@
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
 
-#define FIRMWARE_VERSION "1.0.9" // تنبيه: يجب رفع رقم الإصدار عند إجراء أي تعديل برميجي مستقبلي على هذا الكود
+#define FIRMWARE_VERSION "1.1.0" // تنبيه: يجب رفع رقم الإصدار عند إجراء أي تعديل برميجي مستقبلي على هذا الكود
 
 // تحديث سرعة الاتصال لتفادي تشويه البيانات (9600)
 // إعدادات افتراضية (يمكن تغييرها من خلال صفحة الإعدادات Captive Portal)
@@ -195,9 +195,9 @@ void setup() {
     "</style>"
     "<script>"
     "document.addEventListener('DOMContentLoaded', function() {"
-    "  document.title = 'Solar Cleaner Setup';"
+    "  document.title = 'APW System Setup';"
     "  var header = document.querySelector('h1') || document.querySelector('h2');"
-    "  if (header) header.innerHTML = 'Solar Cleaner System <span style=\"font-size:14px; display:block; opacity:0.7; margin-top:5px;\">v" FIRMWARE_VERSION "</span>';"
+    "  if (header) header.innerHTML = 'APW System <span style=\"font-size:14px; display:block; opacity:0.7; margin-top:5px;\">v" FIRMWARE_VERSION "</span>';"
     "  var links = document.querySelectorAll('a');"
     "  links.forEach(function(link) {"
     "    if (link.getAttribute('href') === '/' || link.innerText.toLowerCase().includes('back') || link.innerText.includes('عودة')) {"
@@ -241,7 +241,7 @@ void setup() {
 
   // بث شبكة تهيئة مخصصة تحمل اسم المعرّف الفريد للجهاز لكي يعرفه الأدمن بسهولة عند التهيئة
   char ap_name[30];
-  snprintf(ap_name, sizeof(ap_name), "Solar-Setup-%s", device_id);
+  snprintf(ap_name, sizeof(ap_name), "APW-Setup-%s", device_id);
 
   // محاولة الاتصال بالشبكة المحفوظة، وإذا فشل يبث شبكة التهيئة الخاصة بالجهاز
   if (!wifiManager.autoConnect(ap_name)) {
