@@ -73,7 +73,7 @@ const int TANK_FULL_DISTANCE            = 10;    // مسافة الخزان مم
 const int MIN_WATER_PERCENT             = 15;    // الحد الأدنى للماء لبدء التنظيف (%)
 const int MOTOR_SPEED                   = 50;    // سرعة المحركات الثابتة (0-255)
 const unsigned long MAX_CLEANING_TIME   = 20000; // حد الأمان الزمني بالمللي ثانية (20 ثانية)
-const unsigned long WATER_CHECK_INTERVAL= 10000; // فترة إرسال مستوى الماء (10 ثوانٍ)
+const unsigned long WATER_CHECK_INTERVAL= 60000; // فترة إرسال مستوى الماء (60 ثانية)
 
 // =================================================================
 //     تعريفات الحالة والهياكل البرمجية

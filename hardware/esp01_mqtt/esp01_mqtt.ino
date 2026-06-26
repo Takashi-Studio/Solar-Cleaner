@@ -7,7 +7,7 @@
 #include <ESP8266httpUpdate.h>
 #include <WiFiClientSecure.h>     // مكتبة الاتصال الآمن بـ HTTPS
 
-#define FIRMWARE_VERSION "1.0.6"
+#define FIRMWARE_VERSION "1.0.7" // تنبيه: يجب رفع رقم الإصدار عند إجراء أي تعديل برميجي مستقبلي على هذا الكود
 
 // تحديث سرعة الاتصال لتفادي تشويه البيانات (9600)
 // إعدادات افتراضية (يمكن تغييرها من خلال صفحة الإعدادات Captive Portal)
@@ -22,6 +22,17 @@ PubSubClient client(espClient);
 // متغير لحفظ حالة إذا كنا بحاجة لحفظ الإعدادات الجديدة
 bool shouldSaveConfig = false;
 
+// متغيرات التحكم في توقيت إعادة اتصال MQTT بشكل غير حاصر
+unsigned long lastReconnectAttempt = 0;
+const unsigned long reconnectInterval = 5000; // حاول كل 5 ثوانٍ
+
+// متغيرات لتأجيل فحص التحديث التلقائي الأول بعد الإقلاع
+bool initialOTACheckDone = false;
+const unsigned long otaDelayTime = 180000; // 3 دقائق بالملي ثانية
+
+// راية لتفعيل فحص التحديثات بشكل آمن من دالة loop
+volatile bool triggerOTA = false;
+
 // دالة رد اتصال لحفظ الإعدادات
 void saveConfigCallback () {
   shouldSaveConfig = true;
@@ -35,43 +46,49 @@ void configModeCallback (WiFiManager *myWiFiManager) {
 
 // دالة استقبال رسائل الـ MQTT من السيرفر
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  // تمرير الأمر مباشرة إلى الأردوينو ميقا عبر Serial كـ JSON
+  // تحويل الرسالة إلى نص لمعاينتها واكتشاف أوامر التحديث
+  String payloadStr = "";
   for (unsigned int i = 0; i < length; i++) {
-    Serial.write((char)payload[i]);
+    payloadStr += (char)payload[i];
   }
-  Serial.println(); // سطر جديد لتفعيل القراءة في الأردوينو
+
+  // 1. إذا كان الأمر خاص بتحديث القطعة سحابياً
+  if (payloadStr.indexOf("\"cmd\":\"check_ota\"") != -1 || 
+      payloadStr.indexOf("\"cmd\":\"update_firmware\"") != -1) {
+    Serial.println("I:OTA update triggered via MQTT from server.");
+    triggerOTA = true;
+    return; // لا نمرر هذا الأمر للأردوينو ميقا
+  }
+
+  // 2. تمرير الأوامر الأخرى مباشرة للأردوينو ميقا عبر Serial كـ JSON
+  Serial.println(payloadStr);
 }
 
-// إعادة الاتصال بسيرفر MQTT في حال انقطاع الاتصال
-void reconnectMQTT() {
-  while (!client.connected()) {
-    Serial.println("I:Attempting MQTT connection...");
+// محاولة إعادة الاتصال بسيرفر MQTT بشكل غير حاصر
+bool reconnectMQTTNonBlocking() {
+  // لا نطبع محاولة الاتصال لتفادي كثرة الرسائل في الشاشة عند عدم وجود سيرفر
+  
+  String activeId = (current_controller_id.length() > 0) ? current_controller_id : String(device_id);
+  
+  char topic_telemetry[60];
+  snprintf(topic_telemetry, sizeof(topic_telemetry), "controller/%s/telemetry", activeId.c_str());
+  
+  String willMessage = "{\"controller\":\"" + activeId + "\",\"status\":\"offline\"}";
+  
+  if (client.connect(device_id, device_id, NULL, topic_telemetry, 1, true, willMessage.c_str())) {
+    Serial.println("I:MQTT Connected");
     
-    String activeId = (current_controller_id.length() > 0) ? current_controller_id : String(device_id);
+    char topic_commands[60];
+    snprintf(topic_commands, sizeof(topic_commands), "controller/%s/commands", activeId.c_str());
+    client.subscribe(topic_commands);
     
-    // إعداد موضوع الحالة والوصية الأخيرة
-    char topic_telemetry[60];
-    snprintf(topic_telemetry, sizeof(topic_telemetry), "controller/%s/telemetry", activeId.c_str());
-    
-    String willMessage = "{\"controller\":\"" + activeId + "\",\"status\":\"offline\"}";
-    
-    if (client.connect(device_id, device_id, NULL, topic_telemetry, 1, true, willMessage.c_str())) {
-      Serial.println("I:MQTT Connected");
-      
-      // الاشتراك في موضوع استقبال الأوامر
-      char topic_commands[60];
-      snprintf(topic_commands, sizeof(topic_commands), "controller/%s/commands", activeId.c_str());
-      client.subscribe(topic_commands);
-      
-      // نشر حالة الاتصال النشطة
-      String onlineMessage = "{\"controller\":\"" + activeId + "\",\"status\":\"online\"}";
-      client.publish(topic_telemetry, onlineMessage.c_str(), true);
-    } else {
-      Serial.print("E:MQTT Connection Failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" - Retrying in 5 seconds");
-      delay(5000);
-    }
+    String onlineMessage = "{\"controller\":\"" + activeId + "\",\"status\":\"online\"}";
+    client.publish(topic_telemetry, onlineMessage.c_str(), true);
+    return true;
+  } else {
+    Serial.print("E:MQTT Connection Failed, rc=");
+    Serial.println(client.state());
+    return false;
   }
 }
 
@@ -95,7 +112,7 @@ void checkOTAUpdate() {
   
   HTTPClient http;
   
-  // بناء الرابط لقراءة إصدار التحديث المتوفر على السيرفر
+  // بناء الرابط لقراءة إصدار التحديث المتوفر على السيرفر (HTTPS ضروري لتفادي كود التوجيه 302)
   String versionUrl = "https://api.solar.dev.takashi-studio.com/firmware/version.txt";
   
   if (http.begin(otaClient, versionUrl)) {
@@ -109,7 +126,7 @@ void checkOTAUpdate() {
         Serial.print(latestVersion);
         Serial.println("] detected! Starting OTA Update...");
         
-        // بناء رابط تحميل كود التحديث البرمجي الجديد
+        // بناء رابط تحميل كود التحديث البرمجي الجديد (HTTPS)
         String binaryUrl = "https://api.solar.dev.takashi-studio.com/firmware/latest.bin";
         
         // محاولة تحميل وتثبيت التحديث
@@ -158,7 +175,7 @@ void setup() {
   // إعداد ميزة WiFiManager
   WiFiManager wifiManager;
 
-  // تخصيص شكل صفحة الإعدادات وتطبيق تصميم عصري (Dark Mode & Glassmorphism)
+  // تخصيص شكل صفحة الإعدادات وتطبيق تصميم عصري (Dark Mode & Glassmorphism) باللون الأزرق
   const char* custom_html_head = 
     "<link href='https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap' rel='stylesheet'>"
     "<style>"
@@ -180,8 +197,40 @@ void setup() {
     "<script>"
     "document.addEventListener('DOMContentLoaded', function() {"
     "  document.title = 'Solar Cleaner Setup';"
-    "  var h2 = document.querySelector('h2');"
-    "  if (h2) h2.innerHTML = 'Solar Cleaner System <span style=\"font-size:14px; display:block; opacity:0.7;\">v" FIRMWARE_VERSION "</span>';"
+    "  var header = document.querySelector('h1') || document.querySelector('h2');"
+    "  if (header) header.innerHTML = 'Solar Cleaner System <span style=\"font-size:14px; display:block; opacity:0.7; margin-top:5px;\">v" FIRMWARE_VERSION "</span>';"
+    "  var links = document.querySelectorAll('a');"
+    "  links.forEach(function(link) {"
+    "    if (link.getAttribute('href') === '/' || link.innerText.toLowerCase().includes('back') || link.innerText.includes('عودة')) {"
+    "      link.style.display = 'block';"
+    "      link.style.width = '100%';"
+    "      link.style.padding = '14px';"
+    "      link.style.margin = '15px 0';"
+    "      link.style.boxSizing = 'border-box';"
+    "      link.style.borderRadius = '10px';"
+    "      link.style.background = 'rgba(255, 255, 255, 0.05)';"
+    "      link.style.border = '1px solid rgba(255, 255, 255, 0.15)';"
+    "      link.style.color = '#fff';"
+    "      link.style.fontWeight = '700';"
+    "      link.style.textAlign = 'center';"
+    "      link.style.fontSize = '16px';"
+    "      link.style.cursor = 'pointer';"
+    "      link.style.transition = 'all 0.3s ease';"
+    "      link.style.textDecoration = 'none';"
+    "      link.addEventListener('mouseenter', function() {"
+    "        link.style.background = 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)';"
+    "        link.style.borderColor = 'transparent';"
+    "        link.style.boxShadow = '0 4px 15px rgba(29, 78, 216, 0.4)';"
+    "        link.style.transform = 'translateY(-2px)';"
+    "      });"
+    "      link.addEventListener('mouseleave', function() {"
+    "        link.style.background = 'rgba(255, 255, 255, 0.05)';"
+    "        link.style.borderColor = 'rgba(255, 255, 255, 0.15)';"
+    "        link.style.boxShadow = 'none';"
+    "        link.style.transform = 'translateY(0)';"
+    "      });"
+    "    }"
+    "  });"
     "});"
     "</script>";
   wifiManager.setCustomHeadElement(custom_html_head);
@@ -212,56 +261,106 @@ void setup() {
   Serial.println(device_id);
   Serial.println("I:WiFi Connected");
 
-  // فحص وجود تحديثات برمجية سحابية وتثبيتها تلقائياً
-  checkOTAUpdate();
+  // ملاحظة: تم إزالة checkOTAUpdate() من هنا تماماً لمنع محاولات الاتصال بالإنترنت عند الإقلاع
 }
 
 void loop() {
-  // التأكد من استمرار اتصال الـ MQTT والـ WiFi
-  if (!client.connected()) {
-    reconnectMQTT();
+  // 1. محاولة إعادة الاتصال بـ MQTT فقط إذا كان الواي فاي متصلاً فعلياً
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!client.connected()) {
+      unsigned long now = millis();
+      if (now - lastReconnectAttempt > reconnectInterval || lastReconnectAttempt == 0) {
+        lastReconnectAttempt = now;
+        if (reconnectMQTTNonBlocking()) {
+          lastReconnectAttempt = 0;
+        }
+      }
+    } else {
+      client.loop();
+    }
   }
-  client.loop();
 
-  // فحص إذا كان هناك بيانات مرسلة من الأردوينو ميقا عبر Serial لتمريرها للسيرفر
+  // 1.5 الفحص التلقائي المؤجل لمرة واحدة بعد 3 دقائق من الإقلاع واستقرار الشبكة
+  if (!initialOTACheckDone && WiFi.status() == WL_CONNECTED) {
+    if (millis() > otaDelayTime) {
+      initialOTACheckDone = true;
+      triggerOTA = true;
+    }
+  }
+
+  // 2. فحص راية تحديث النظام (OTA) لتشغيل التحديث بشكل آمن
+  // يتم تشغيل هذا الشرط فقط إذا كان هناك طلب صريح وكان الواي فاي متصلاً
+  if (triggerOTA && WiFi.status() == WL_CONNECTED) {
+    triggerOTA = false;
+    checkOTAUpdate();
+  }
+
+  // 3. فحص الأوامر الواردة من الأردوينو ميقا عبر السيريال (متاحة دائماً)
   if (Serial.available()) {
     String incomingData = Serial.readStringUntil('\n');
     incomingData.trim();
 
-    if (incomingData.length() > 0 && incomingData.startsWith("{")) {
-      // استكشاف معرف الأردوينو ميقا تلقائياً من خلال الـ JSON لتحديث موضوع الاشتراك
-      int startIdx = incomingData.indexOf("\"controller\":\"");
-      if (startIdx != -1) {
-        startIdx += 14;
-        int endIdx = incomingData.indexOf("\"", startIdx);
-        if (endIdx != -1) {
-          String detectedId = incomingData.substring(startIdx, endIdx);
-          if (detectedId != current_controller_id) {
-            // إلغاء الاشتراك القديم إذا كان موجوداً
-            if (current_controller_id.length() > 0) {
-              char old_topic_commands[60];
-              snprintf(old_topic_commands, sizeof(old_topic_commands), "controller/%s/commands", current_controller_id.c_str());
-              client.unsubscribe(old_topic_commands);
-            }
-            
-            current_controller_id = detectedId;
-            
-            // الاشتراك في موضوع الأوامر الجديد
-            char new_topic_commands[60];
-            snprintf(new_topic_commands, sizeof(new_topic_commands), "controller/%s/commands", current_controller_id.c_str());
-            client.subscribe(new_topic_commands);
-            
-            Serial.print("I:Linked to controller: ");
-            Serial.println(current_controller_id);
-          }
-        }
+    if (incomingData.length() > 0) {
+      // أ. فحص أمر إعادة ضبط الواي فاي
+      if (incomingData == "RESET_WIFI" || 
+          incomingData.indexOf("\"cmd\":\"reset_wifi\"") != -1 || 
+          incomingData.indexOf("\"command\":\"reset_wifi\"") != -1) {
+        
+        Serial.println("I:WiFi reset command received via Serial. Clearing settings and restarting...");
+        WiFiManager wifiManager;
+        wifiManager.resetSettings();
+        delay(1000);
+        ESP.restart();
+        return;
       }
 
-      // تمرير الـ JSON المستلم مباشرة كما هو إلى السيرفر عبر MQTT
-      String activeId = (current_controller_id.length() > 0) ? current_controller_id : String(device_id);
-      char topic_telemetry[60];
-      snprintf(topic_telemetry, sizeof(topic_telemetry), "controller/%s/telemetry", activeId.c_str());
-      client.publish(topic_telemetry, incomingData.c_str());
+      // ب. فحص أمر تحديث النظام الموجه من الأردوينو ميقا
+      if (incomingData == "CHECK_OTA" || 
+          incomingData.indexOf("\"cmd\":\"check_ota\"") != -1) {
+        
+        Serial.println("I:OTA check triggered via Serial.");
+        triggerOTA = true;
+        return;
+      }
+
+      // ج. تمرير بيانات التليمتري والـ JSON كالمعتاد إلى السيرفر عبر MQTT
+      if (incomingData.startsWith("{")) {
+        // استكشاف معرف الأردوينو ميقا تلقائياً من خلال الـ JSON لتحديث موضوع الاشتراك
+        int startIdx = incomingData.indexOf("\"controller\":\"");
+        if (startIdx != -1) {
+          startIdx += 14;
+          int endIdx = incomingData.indexOf("\"", startIdx);
+          if (endIdx != -1) {
+            String detectedId = incomingData.substring(startIdx, endIdx);
+            if (detectedId != current_controller_id) {
+              // إلغاء الاشتراك القديم إذا كان موجوداً
+              if (current_controller_id.length() > 0) {
+                char old_topic_commands[60];
+                snprintf(old_topic_commands, sizeof(old_topic_commands), "controller/%s/commands", current_controller_id.c_str());
+                client.unsubscribe(old_topic_commands);
+              }
+              
+              current_controller_id = detectedId;
+              
+              // الاشتراك في موضوع الأوامر الجديد
+              char new_topic_commands[60];
+              snprintf(new_topic_commands, sizeof(new_topic_commands), "controller/%s/commands", current_controller_id.c_str());
+              client.subscribe(new_topic_commands);
+              
+              Serial.print("I:Linked to controller: ");
+              Serial.println(current_controller_id);
+            }
+          }
+        }
+
+        // تمرير الـ JSON المستلم مباشرة كما هو إلى السيرفر عبر MQTT (فقط إذا كان متصلاً)
+        if (client.connected()) {
+          String activeId = (current_controller_id.length() > 0) ? current_controller_id : String(device_id);
+          char topic_telemetry[60];
+          snprintf(topic_telemetry, sizeof(topic_telemetry), "controller/%s/telemetry", activeId.c_str());
+          client.publish(topic_telemetry, incomingData.c_str());
+        }
+      }
     }
   }
 }
