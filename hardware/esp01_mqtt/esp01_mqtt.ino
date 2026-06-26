@@ -6,7 +6,7 @@
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
 
-#define FIRMWARE_VERSION "1.0.8" // تنبيه: يجب رفع رقم الإصدار عند إجراء أي تعديل برميجي مستقبلي على هذا الكود
+#define FIRMWARE_VERSION "1.0.9" // تنبيه: يجب رفع رقم الإصدار عند إجراء أي تعديل برميجي مستقبلي على هذا الكود
 
 // تحديث سرعة الاتصال لتفادي تشويه البيانات (9600)
 // إعدادات افتراضية (يمكن تغييرها من خلال صفحة الإعدادات Captive Portal)
@@ -165,6 +165,7 @@ void setup() {
   // طباعة إصدار البرنامج مباشرة عند الإقلاع
   Serial.print("I:Firmware Version: ");
   Serial.println(FIRMWARE_VERSION);
+  Serial.println("I:Minor update compiled for OTA testing.");
 
   // توليد معرف فريد للجهاز بناءً على Chip ID الخاص بـ ESP8266 بصيغة ست عشرية (Hexadecimal)
   uint32_t chipId = ESP.getChipId();
