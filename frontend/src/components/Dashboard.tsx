@@ -98,6 +98,7 @@ function StateBadge({ state, isOffline }: { state: string; isOffline?: boolean }
     SENSOR_ERR: { label: 'خطأ في الحساس', cls: 'bg-red-500/15 text-red-400 border-red-500/30 shadow-[0_0_8px_rgba(239,110,110,0.15)]', icon: <AlertTriangle size={11} /> },
     LIMIT_SWITCH_ERROR: { label: 'خطأ ميكانيكي', cls: 'bg-red-500/15 text-red-400 border-red-500/30 shadow-[0_0_8px_rgba(239,110,110,0.15)]', icon: <AlertTriangle size={11} /> },
     STOPPED: { label: 'موقوف', cls: 'bg-slate-600/20 text-slate-400 border-slate-600/30', icon: <Square size={11} /> },
+    OFFLINE: { label: 'غير متصل', cls: 'bg-slate-800/25 text-slate-500 border-slate-800/40', icon: <WifiOff size={11} /> },
     IDLE: { label: 'جاهز', cls: 'bg-slate-700/20 text-slate-500 border-slate-700/30', icon: null },
   };
   const cfg = map[state] ?? map.IDLE;
@@ -784,6 +785,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
                           const isActive = isCleaning || isReturning;
                           const isIdle = unit.state === 'IDLE' || unit.state === 'CLEANING_DONE';
                           const isCtrlOffline = ctrl.status === 'offline';
+                          const isOffline = unit.state === 'OFFLINE';
+                          const isUnitOffline = isCtrlOffline || isOffline;
                           
                           if (!unit.is_installed) {
                             return (
@@ -810,11 +813,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
                               {/* Card Header */}
                               <div className="flex items-center justify-between px-4 pt-4 pb-2">
                                 <div className="flex items-center gap-2.5">
-                                  <span className={`w-2 h-2 rounded-full ${isCtrlOffline ? 'bg-slate-500' : isCleaning ? 'bg-cyan-400 animate-pulse' : isReturning ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'}`} />
+                                  <span className={`w-2 h-2 rounded-full ${isUnitOffline ? 'bg-slate-500' : isCleaning ? 'bg-cyan-400 animate-pulse' : isReturning ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'}`} />
                                   <span className={`text-sm font-black ${themeClasses.titleText}`}>{unit.name}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <StateBadge state={unit.state} isOffline={isCtrlOffline} />
+                                  <StateBadge state={unit.state} isOffline={isUnitOffline} />
                                 </div>
                               </div>
 
@@ -835,7 +838,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
                                   {/* Start Clean (Play) */}
                                   <button
                                     onClick={() => sendCmd(ctrl.id, unit.id, 'clean')}
-                                    disabled={cmdLoading[unit.id] || isActive || unit.water_level < 15 || isCtrlOffline}
+                                    disabled={cmdLoading[unit.id] || isActive || unit.water_level < 15 || isUnitOffline}
                                     title="بدء التنظيف"
                                     className="w-10 h-10 rounded-full flex items-center justify-center bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 border border-emerald-500/20 disabled:opacity-40 disabled:pointer-events-none transition-all active:scale-90"
                                   >
@@ -849,10 +852,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
                                   {/* Stop Clean (Stop) */}
                                   <button
                                     onClick={() => sendCmd(ctrl.id, unit.id, 'stop')}
-                                    disabled={cmdLoading[unit.id] || isIdle || isCtrlOffline}
+                                    disabled={cmdLoading[unit.id] || isIdle || isUnitOffline}
                                     title="إيقاف طارئ"
                                     className={`w-10 h-10 rounded-full flex items-center justify-center border transition-all active:scale-90 ${
-                                      isIdle || isCtrlOffline
+                                      isIdle || isUnitOffline
                                         ? 'bg-slate-800/10 text-slate-600 border-slate-800/20' 
                                         : 'bg-red-500/20 text-red-400 border-red-500/40 animate-pulse shadow-[0_0_12px_rgba(239,68,68,0.4)] hover:bg-red-500 hover:text-white'
                                     }`}

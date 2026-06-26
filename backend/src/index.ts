@@ -152,7 +152,10 @@ mqttClient.on('message', async (topic, message) => {
 
       await prisma.cleaningUnit.update({
         where: { id: unit.id },
-        data: { state: newState }
+        data: { 
+          state: newState,
+          is_installed: newState !== 'OFFLINE'
+        }
       });
 
       // عند بدء التنظيف: حفظ مستوى الماء الأولي والوقت
