@@ -276,7 +276,17 @@ app.get('/api/controllers', authenticateToken, async (req: AuthenticatedRequest,
       include: { units: { orderBy: { port_number: 'asc' } } },
       orderBy: { name: 'asc' }
     });
-    res.json(controllers);
+
+    // حساب الحالة الفعلية ديناميكياً بناءً على آخر ظهور (last_seen) خلال 45 ثانية
+    const mapped = controllers.map(c => {
+      const isOnline = c.status === 'online' && (Date.now() - new Date(c.last_seen).getTime() < 45000);
+      return {
+        ...c,
+        status: isOnline ? 'online' : 'offline'
+      };
+    });
+
+    res.json(mapped);
   } catch (err) {
     res.status(500).json({ error: 'Database error' });
   }
@@ -492,10 +502,11 @@ app.get(['/api/admin/controllers', '/api/admin/devices'], authenticateToken, req
     // دمج حالة مستوى الماء وحالة التشغيل من الوحدات التابعة للمتحكم لكي تتطابق مع متطلبات الواجهة الأمامية
     const mapped = controllers.map(c => {
       const firstUnit = c.units[0];
+      const isOnline = c.status === 'online' && (Date.now() - new Date(c.last_seen).getTime() < 45000);
       return {
         id: c.id,
         name: c.name,
-        status: c.status,
+        status: isOnline ? 'online' : 'offline',
         last_seen: c.last_seen,
         user: c.user,
         state: firstUnit ? firstUnit.state : 'IDLE',
