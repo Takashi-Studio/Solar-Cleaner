@@ -83,7 +83,8 @@ enum SystemState {
   PRE_PUMP,        // رش الماء المبدئي (5 ثوانٍ)
   PRE_DELAY,       // فترة الأمان والانتظار (3 ثوانٍ)
   MOVING_FORWARD,  // حركة المحركات للأمام
-  MOVING_BACKWARD  // حركة المحركات للخلف للعودة للبداية
+  MOVING_BACKWARD, // حركة المحركات للخلف للعودة للبداية
+  CYCLE_DELAY      // فترة الانتظار بين الدورتين (3 ثوانٍ)
 };
 
 // هيكل بيانات وحدة التنظيف (يتطابق مع جدول CleaningUnit في قاعدة البيانات)
@@ -425,15 +426,24 @@ void handleUnitCommand(int idx, String command) {
       moveBackward(unit);
       unit.movementStartTime = millis();
       unit.currentState = MOVING_BACKWARD;
+      unit.gracefulStop = true;
+      sendStatusUpdate(unit, "RETURNING_HOME");
       Serial.print("[STOP] Unit "); Serial.print(unit.id); Serial.println(" -> Pump off, reversing to home.");
-    } else {
-      // إذا كان يعود أصلاً: نكمل العودة بدون مضخة
+    } 
+    else if (unit.currentState == MOVING_BACKWARD) {
+      // إذا كان يعود أصلاً: نكمل العودة بدون مضخة ونبقي خيار الإيقاف الآمن فعالاً
+      unit.gracefulStop = true;
+      sendStatusUpdate(unit, "RETURNING_HOME");
       Serial.print("[STOP] Unit "); Serial.print(unit.id); Serial.println(" -> Pump off, continuing home.");
     }
-
-    // 2. تفعيل وضع الإيقاف الآمن (سيُرسل WATER_LOW بدلاً من CLEANING_DONE عند الوصول)
-    unit.gracefulStop = true;
-    sendStatusUpdate(unit, "RETURNING_HOME");
+    else {
+      // إذا كان في المراحل التمهيدية عند البداية (PRE_PUMP أو PRE_DELAY أو CYCLE_DELAY):
+      // نوقف كل شيء ونلغي العملية فوراً دون أي حركة للمحركات
+      stopUnitEverything(unit);
+      unit.gracefulStop = false;
+      sendStatusUpdate(unit, "WATER_LOW");
+      Serial.print("[STOP] Unit "); Serial.print(unit.id); Serial.println(" -> Cancelled at start position.");
+    }
   }
   else if (command == "TEST_FWD") {
     // تشغيل المحرك للأمام بشكل فردي للفحص مع تفعيل أمان نهاية المسار
@@ -558,12 +568,10 @@ void updateMotors() {
           Serial.print("[TEST] Unit "); Serial.print(unit.id); Serial.println(" -> Test finished at home.");
         }
         else if (unit.currentCycle == 1) {
-          // انتهت الدورة الأولى، ابدأ الدورة الثانية (رش ماء ثانٍ)
-          unit.currentCycle = 2;
-          digitalWrite(unit.pinPumpRelay, LOW); // تشغيل الرش المرة الثانية
-          unit.currentState = PRE_PUMP;
+          // انتهت الدورة الأولى، ندخل في فترة أمان وانتظار قبل بدء الدورة الثانية
+          unit.currentState = CYCLE_DELAY;
           unit.stateStartTime = now;
-          Serial.print("[SEQUENCE] Unit "); Serial.print(unit.id); Serial.println(" -> Cycle 1 finished. Starting Cycle 2 (Pump 5s).");
+          Serial.print("[SEQUENCE] Unit "); Serial.print(unit.id); Serial.println(" -> Cycle 1 finished. Waiting 3s cycle delay...");
         }
         else if (unit.currentCycle == 2) {
           // اكتملت دورتي التنظيف كاملتين
@@ -578,6 +586,16 @@ void updateMotors() {
         stopUnitEverything(unit);
         sendStatusUpdate(unit, "LIMIT_SWITCH_ERROR");
         Serial.print("[ERROR] Unit "); Serial.print(unit.id); Serial.println(" -> Backward timeout. Emergency stop.");
+      }
+    }
+    else if (unit.currentState == CYCLE_DELAY) {
+      // 5. فترة انتظار 3 ثوانٍ بين الدورة الأولى والثانية
+      if (now - unit.stateStartTime >= 3000) {
+        unit.currentCycle = 2;
+        digitalWrite(unit.pinPumpRelay, LOW); // تشغيل الرش المرة الثانية (Active-Low)
+        unit.currentState = PRE_PUMP;
+        unit.stateStartTime = now;
+        Serial.print("[SEQUENCE] Unit "); Serial.print(unit.id); Serial.println(" -> Cycle delay finished. Starting Cycle 2 (Pump 5s).");
       }
     }
   }
@@ -621,23 +639,34 @@ void stopUnitMotors(CleaningUnit &unit) {
 //     تُعيد النسبة المئوية (0-100) وتضبط sensorOk للإشارة لصحة القراءة
 // =================================================================
 int measureWaterLevel(CleaningUnit &unit, bool &sensorOk) {
-  digitalWrite(unit.pinTrig, LOW);
-  delayMicroseconds(2);
-  digitalWrite(unit.pinTrig, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(unit.pinTrig, LOW);
+  long totalDuration = 0;
+  int validReadings = 0;
 
-  // انتظار الصدى بحد أقصى 30 مللي ثانية
-  long duration = pulseIn(unit.pinEcho, HIGH, 30000);
+  for (int r = 0; r < 3; r++) {
+    digitalWrite(unit.pinTrig, LOW);
+    delayMicroseconds(2);
+    digitalWrite(unit.pinTrig, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(unit.pinTrig, LOW);
 
-  if (duration <= 80) {
-    // النبضات القصيرة جداً هي تشويش كهربائي ناتج عن قرب الدبابيس وعم توصيل حساس فعلي
+    // انتظار الصدى بحد أقصى 20 مللي ثانية
+    long duration = pulseIn(unit.pinEcho, HIGH, 20000);
+    if (duration > 80 && duration < 30000) {
+      totalDuration += duration;
+      validReadings++;
+    }
+    delay(10); // مهلة قصيرة بين القراءات للفصل بين الموجات الصوتية
+  }
+
+  if (validReadings < 2) {
+    // إذا لم تنجح قراءتان على الأقل، نعتبر الحساس غير متصل أو به خطأ
     sensorOk = false;
     return 0;
   }
 
   sensorOk = true;
-  int distance = (int)(duration * 0.034 / 2);
+  long avgDuration = totalDuration / validReadings;
+  int distance = (int)(avgDuration * 0.034 / 2);
   distance = constrain(distance, TANK_FULL_DISTANCE, TANK_EMPTY_DISTANCE);
 
   int waterPercent = map(distance, TANK_FULL_DISTANCE, TANK_EMPTY_DISTANCE, 100, 0);

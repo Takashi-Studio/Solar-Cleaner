@@ -186,6 +186,12 @@ mqttClient.on('message', async (topic, message) => {
       const prevState = unit.state;
       const newState: string = payload.state;
 
+      // ⚠️ إيقاف طارئ تلقائي في حال حدوث خطأ في الحساس أثناء عملية التنظيف لمنع التشغيل الجاف للمضخة
+      if (newState === 'SENSOR_ERR' && prevState === 'CLEANING') {
+        console.warn(`[EMERGENCY STOP] Unit ${unit.id} sensor error during cleaning. Sending STOP.`);
+        sendCommand(controllerId, unit.port_number, 'STOP_CLEAN');
+      }
+
       await prisma.cleaningUnit.update({
         where: { id: unit.id },
         data: { 
