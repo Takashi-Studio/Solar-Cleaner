@@ -153,8 +153,9 @@ void sendWaterLevel(CleaningUnit &unit, int level) {
   json += level;
   json += "}";
   Serial1.println(json);
-  Serial.print("[WATER] Unit "); Serial.print(unit.id);
-  Serial.print(" -> "); Serial.print(level); Serial.println("%");
+  // تم إيقاف الطباعة اللحظية في شاشة المراقبة لتفادي كثرة الرسائل، مع إرسالها للسيرفر بشكل طبيعي
+  // Serial.print("[WATER] Unit "); Serial.print(unit.id);
+  // Serial.print(" -> "); Serial.print(level); Serial.println("%");
 }
 
 // إرسال تحديث حالة وحدة محددة
