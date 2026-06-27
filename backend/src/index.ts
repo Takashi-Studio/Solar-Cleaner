@@ -534,16 +534,27 @@ app.get(['/api/admin/controllers', '/api/admin/devices'], authenticateToken, req
 
     // دمج حالة مستوى الماء وحالة التشغيل من الوحدات التابعة للمتحكم لكي تتطابق مع متطلبات الواجهة الأمامية
     const mapped = controllers.map(c => {
-      const firstUnit = c.units[0];
       const isOnline = c.status === 'online' && (Date.now() - new Date(c.last_seen).getTime() < 90000);
+      
+      // تصفية الوحدات المثبتة فقط لحساب الحالة الكلية بدقة
+      const installedUnits = c.units.filter(u => u.is_installed);
+      const isCleaning = installedUnits.some(u => u.state === 'CLEANING');
+      const isReturning = installedUnits.some(u => u.state === 'RETURNING_HOME');
+      
+      const controllerState = isCleaning ? 'CLEANING' : (isReturning ? 'RETURNING_HOME' : 'IDLE');
+      
+      // عرض مستوى مياه أول وحدة مثبتة ونشطة
+      const firstActiveUnit = installedUnits[0] || c.units[0];
+      const waterLevel = firstActiveUnit ? firstActiveUnit.water_level : 0;
+
       return {
         id: c.id,
         name: c.name,
         status: isOnline ? 'online' : 'offline',
         last_seen: c.last_seen,
         user: c.user,
-        state: firstUnit ? firstUnit.state : 'IDLE',
-        water_level: firstUnit ? firstUnit.water_level : 0,
+        state: controllerState,
+        water_level: waterLevel,
         units: c.units
       };
     });
