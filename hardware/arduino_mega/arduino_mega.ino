@@ -506,8 +506,8 @@ void moveForward(CleaningUnit &unit) {
   digitalWrite(unit.pinIN2, LOW);
 
   analogWrite(unit.pinENB,  MOTOR_SPEED);
-  digitalWrite(unit.pinIN3, LOW);   // اتجاه عكسي لتطابق التناظر الميكانيكي
-  digitalWrite(unit.pinIN4, HIGH);
+  digitalWrite(unit.pinIN3, HIGH);  // مطابقة اتجاه الدوران للجهتين برمجياً
+  digitalWrite(unit.pinIN4, LOW);
 }
 
 void moveBackward(CleaningUnit &unit) {
@@ -516,8 +516,8 @@ void moveBackward(CleaningUnit &unit) {
   digitalWrite(unit.pinIN2, HIGH);
 
   analogWrite(unit.pinENB,  MOTOR_SPEED);
-  digitalWrite(unit.pinIN3, HIGH);  // اتجاه عكسي لتطابق التناظر الميكانيكي
-  digitalWrite(unit.pinIN4, LOW);
+  digitalWrite(unit.pinIN3, LOW);   // مطابقة اتجاه الدوران للجهتين برمجياً
+  digitalWrite(unit.pinIN4, HIGH);
 }
 
 void stopUnitMotors(CleaningUnit &unit) {
