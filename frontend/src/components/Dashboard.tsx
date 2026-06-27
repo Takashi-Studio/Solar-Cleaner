@@ -59,8 +59,11 @@ interface CleaningLog {
 // ===================== Helpers =====================
 const DAY_NAMES = ['أحد', 'إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'];
 
-function formatLastSeen(dateStr: string): string {
-  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+function formatLastSeen(dateStr?: string | null): string {
+  if (!dateStr) return 'أبداً';
+  const t = new Date(dateStr).getTime();
+  if (isNaN(t)) return 'أبداً';
+  const diff = Math.floor((Date.now() - t) / 1000);
   if (diff < 60) return 'الآن';
   if (diff < 3600) return `${Math.floor(diff / 60)} د`;
   if (diff < 86400) return `${Math.floor(diff / 3600)} س`;
@@ -73,8 +76,11 @@ function formatTime(seconds?: number): string {
   return `${Math.floor(seconds / 60)}د ${seconds % 60}ث`;
 }
 
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString('ar-SA', {
+function formatDate(dateStr?: string | null): string {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleString('ar-SA', {
     month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit'
   });
@@ -111,14 +117,19 @@ function StateBadge({ state, isOffline }: { state: string; isOffline?: boolean }
 }
 
 // ===================== Water Ring =====================
-function WaterRing({ level }: { level: number }) {
+interface WaterRingProps {
+  level: number;
+  isLightTheme?: boolean;
+}
+
+export const WaterRing: React.FC<WaterRingProps> = ({ level, isLightTheme }) => {
   const color = level > 50 ? '#06b6d4' : level > 20 ? '#f59e0b' : '#ef4444';
   const r = 16, c = 20, circ = 2 * Math.PI * r;
   const dash = (level / 100) * circ;
   return (
     <div className="relative flex items-center justify-center w-11 h-11">
       <svg width="40" height="40" viewBox="0 0 40 40" className="rotate-[-90deg]">
-        <circle cx={c} cy={c} r={r} fill="none" stroke="#1e293b" strokeWidth="4" />
+        <circle cx={c} cy={c} r={r} fill="none" stroke={isLightTheme ? '#e2e8f0' : '#1e293b'} strokeWidth="4" />
         <circle
           cx={c} cy={c} r={r} fill="none"
           stroke={color} strokeWidth="4"
@@ -127,7 +138,7 @@ function WaterRing({ level }: { level: number }) {
           style={{ transition: 'stroke-dasharray 1s ease' }}
         />
       </svg>
-      <span className="absolute text-[10px] font-bold text-white">{level}%</span>
+      <span className={`absolute text-[10px] font-bold ${isLightTheme ? 'text-slate-900' : 'text-white'}`}>{level}%</span>
     </div>
   );
 }
@@ -676,7 +687,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
                       />
                     </svg>
                     <div className="absolute text-center">
-                      <span className="text-3xl font-black text-white">{avgWater}%</span>
+                      <span className={`text-3xl font-black ${themeClasses.titleText}`}>{avgWater}%</span>
                       <p className="text-[10px] text-slate-500 mt-1">المستوى الحالي</p>
                     </div>
                   </div>
@@ -842,7 +853,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
                               {/* Card Body */}
                               <div className="flex items-center justify-between px-4 pb-4 gap-4">
                                 <div className="flex items-center gap-3">
-                                  <WaterRing level={unit.water_level} />
+                                  <WaterRing level={unit.water_level} isLightTheme={isLightTheme} />
                                   <div>
                                     <span className="text-[10px] text-slate-500 block">مستوى المياه</span>
                                     <span className={`text-[11px] font-bold ${unit.water_level <= 15 ? 'text-red-400' : unit.water_level <= 30 ? 'text-amber-400' : 'text-emerald-400'}`}>
