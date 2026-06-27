@@ -172,12 +172,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
   const drawerCtrl = detailUnit ? controllers.find(c => c.id === detailUnit.controllerId) : null;
   const isDrawerCtrlOnline = drawerCtrl?.status === 'online';
   
-  // Theme State
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    const localTheme = localStorage.getItem('solar_clean_theme') as 'dark' | 'light';
-    if (localTheme) return localTheme;
-    return (user as any)?.theme_preference || 'dark';
-  });
+  // Theme State (الموقع مغلق على الثيم الداكن المتميز ليطابق باقي الموقع)
+  const theme = 'dark';
+  const setTheme = (t: 'dark' | 'light') => {};
   
   const toggleTheme = async (newTheme: 'dark' | 'light') => {
     setTheme(newTheme);
