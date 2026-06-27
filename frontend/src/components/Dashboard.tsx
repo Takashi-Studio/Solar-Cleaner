@@ -633,7 +633,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
                 <p className="text-sm font-black text-red-400">تنبيه حرج في النظام</p>
                 <p className="text-[11px] text-slate-500 mt-0.5">
                   {installedUnits.filter(u => u.water_level <= 15).length > 0 && 'مستوى ماء منخفض جداً في بعض الخزانات. '}
-                  {installedUnits.filter(u => u.state === 'SENSOR_ERR').length > 0 && 'خطأ في قراءة الحساسات الصوتية. '}
+                  {installedUnits.filter(u => u.state === 'SENSOR_ERR').length > 0 && 'خطأ في قراءة حساسات المياه. '}
                   {installedUnits.filter(u => u.state === 'LIMIT_SWITCH_ERROR').length > 0 && 'خطأ ميكانيكي في تحديد نهاية الشوط.'}
                 </p>
               </div>
