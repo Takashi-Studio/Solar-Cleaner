@@ -7,14 +7,13 @@
 #include <ESP8266httpUpdate.h>
 #include <WiFiClient.h>           // استخدام العميل العادي بدلاً من Secure لتقليل الحجم
 
-#define FIRMWARE_VERSION "1.1.3" // تنبيه: يجب رفع رقم الإصدار عند إجراء أي تعديل برميجي مستقبلي على هذا الكود
+#define FIRMWARE_VERSION "1.1.4" // تنبيه: يجب رفع رقم الإصدار عند إجراء أي تعديل برميجي مستقبلي على هذا الكود
 
 // تحديث سرعة الاتصال لتفادي تشويه البيانات (9600)
 // إعدادات افتراضية (يمكن تغييرها من خلال صفحة الإعدادات Captive Portal)
 char mqtt_server[40] = "161.97.152.98";
 char mqtt_port[6] = "1883";
 char device_id[20] = ""; // معرّف الهاردوير الفريد لقطعة الواي فاي (Hex Chip ID)
-String current_controller_id = ""; // معرّف الأردوينو ميقا (يُكتشف تلقائياً من رسائل الأردوينو)
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -72,21 +71,19 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 bool reconnectMQTTNonBlocking() {
   // لا نطبع محاولة الاتصال لتفادي كثرة الرسائل في الشاشة عند عدم وجود سيرفر
   
-  String activeId = (current_controller_id.length() > 0) ? current_controller_id : String(device_id);
-  
   char topic_telemetry[60];
-  snprintf(topic_telemetry, sizeof(topic_telemetry), "controller/%s/telemetry", activeId.c_str());
+  snprintf(topic_telemetry, sizeof(topic_telemetry), "controller/%s/telemetry", device_id);
   
-  String willMessage = "{\"controller\":\"" + activeId + "\",\"status\":\"offline\"}";
+  String willMessage = "{\"controller\":\"" + String(device_id) + "\",\"status\":\"offline\"}";
   
   if (client.connect(device_id, device_id, NULL, topic_telemetry, 1, true, willMessage.c_str())) {
     Serial.println("I:MQTT Connected");
     
     char topic_commands[60];
-    snprintf(topic_commands, sizeof(topic_commands), "controller/%s/commands", activeId.c_str());
+    snprintf(topic_commands, sizeof(topic_commands), "controller/%s/commands", device_id);
     client.subscribe(topic_commands);
     
-    String onlineMessage = "{\"controller\":\"" + activeId + "\",\"status\":\"online\"}";
+    String onlineMessage = "{\"controller\":\"" + String(device_id) + "\",\"status\":\"online\"}";
     client.publish(topic_telemetry, onlineMessage.c_str(), true);
     return true;
   } else {
@@ -285,10 +282,9 @@ void loop() {
       unsigned long now = millis();
       if (now - lastHeartbeat >= heartbeatInterval || lastHeartbeat == 0) {
         lastHeartbeat = now;
-        String activeId = (current_controller_id.length() > 0) ? current_controller_id : String(device_id);
         char topic_telemetry[60];
-        snprintf(topic_telemetry, sizeof(topic_telemetry), "controller/%s/telemetry", activeId.c_str());
-        String onlineMessage = "{\"controller\":\"" + activeId + "\",\"status\":\"online\"}";
+        snprintf(topic_telemetry, sizeof(topic_telemetry), "controller/%s/telemetry", device_id);
+        String onlineMessage = "{\"controller\":\"" + String(device_id) + "\",\"status\":\"online\"}";
         client.publish(topic_telemetry, onlineMessage.c_str(), true);
       }
     }
@@ -339,39 +335,13 @@ void loop() {
 
       // ج. تمرير بيانات التليمتري والـ JSON كالمعتاد إلى السيرفر عبر MQTT
       if (incomingData.startsWith("{")) {
-        // استكشاف معرف الأردوينو ميقا تلقائياً من خلال الـ JSON لتحديث موضوع الاشتراك
-        int startIdx = incomingData.indexOf("\"controller\":\"");
-        if (startIdx != -1) {
-          startIdx += 14;
-          int endIdx = incomingData.indexOf("\"", startIdx);
-          if (endIdx != -1) {
-            String detectedId = incomingData.substring(startIdx, endIdx);
-            if (detectedId != current_controller_id) {
-              // إلغاء الاشتراك القديم إذا كان موجوداً
-              if (current_controller_id.length() > 0) {
-                char old_topic_commands[60];
-                snprintf(old_topic_commands, sizeof(old_topic_commands), "controller/%s/commands", current_controller_id.c_str());
-                client.unsubscribe(old_topic_commands);
-              }
-              
-              current_controller_id = detectedId;
-              
-              // الاشتراك في موضوع الأوامر الجديد
-              char new_topic_commands[60];
-              snprintf(new_topic_commands, sizeof(new_topic_commands), "controller/%s/commands", current_controller_id.c_str());
-              client.subscribe(new_topic_commands);
-              
-              Serial.print("I:Linked to controller: ");
-              Serial.println(current_controller_id);
-            }
-          }
-        }
+        // استبدال معرف الأردوينو ميقا الثابت بمعرف قطعة الواي فاي الفريد لتوحيد الهوية ومنع التداخل
+        incomingData.replace("ARD-MEGA-001", device_id);
 
-        // تمرير الـ JSON المستلم مباشرة كما هو إلى السيرفر عبر MQTT (فقط إذا كان متصلاً)
+        // تمرير الـ JSON المستلم مباشرة بعد التعديل إلى السيرفر عبر MQTT (فقط إذا كان متصلاً)
         if (client.connected()) {
-          String activeId = (current_controller_id.length() > 0) ? current_controller_id : String(device_id);
           char topic_telemetry[60];
-          snprintf(topic_telemetry, sizeof(topic_telemetry), "controller/%s/telemetry", activeId.c_str());
+          snprintf(topic_telemetry, sizeof(topic_telemetry), "controller/%s/telemetry", device_id);
           client.publish(topic_telemetry, incomingData.c_str());
         }
       }
