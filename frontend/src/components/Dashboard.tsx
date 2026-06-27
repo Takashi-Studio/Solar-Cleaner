@@ -136,9 +136,27 @@ function WaterRing({ level }: { level: number }) {
 export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onNavigateToAdmin }) => {
   const [controllers, setControllers] = useState<Controller[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'home' | 'units' | 'logs' | 'profile'>('home');
+  const [currentHash, setCurrentHash] = useState(window.location.hash || '#/dashboard/home');
   const [detailUnit, setDetailUnit] = useState<{ unit: CleaningUnit; controllerId: string } | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      setCurrentHash(window.location.hash || '#/dashboard/home');
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // تحديد التبويب النشط بناءً على الهاش
+  let activeTab: 'home' | 'units' | 'logs' | 'profile' = 'home';
+  if (currentHash === '#/dashboard/units') {
+    activeTab = 'units';
+  } else if (currentHash === '#/dashboard/logs') {
+    activeTab = 'logs';
+  } else if (currentHash === '#/dashboard/profile') {
+    activeTab = 'profile';
+  }
 
   const drawerCtrl = detailUnit ? controllers.find(c => c.id === detailUnit.controllerId) : null;
   const isDrawerCtrlOnline = drawerCtrl?.status === 'online';
@@ -439,7 +457,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveTab(item.id as any)}
+                onClick={() => { window.location.hash = `#/dashboard/${item.id}`; }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
                   active ? themeClasses.navActive : themeClasses.navInactive
                 }`}
@@ -523,7 +541,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ token, user, onLogout, onN
                   <button
                     key={item.id}
                     onClick={() => {
-                      setActiveTab(item.id as any);
+                      window.location.hash = `#/dashboard/${item.id}`;
                       setMobileMenuOpen(false);
                     }}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
