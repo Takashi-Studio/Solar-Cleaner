@@ -200,16 +200,15 @@ void setup() {
     pinMode(unit.pinLimitStart, INPUT_PULLUP);
     pinMode(unit.pinLimitEnd,   INPUT_PULLUP);
 
-    // نفترض دائماً أن الوحدات مثبتة لتمكين التحكم بها حتى بدون وجود حساسات مائية
-    unit.isInstalled = true;
-
+    // الكشف التلقائي عن الوحدة بقراءة الحساس (Plug & Play)
     bool sensorOk = false;
     measureWaterLevel(unit, sensorOk);
+    unit.isInstalled = sensorOk;
 
     if (sensorOk) {
-      Serial.print("[BOOT] Unit ["); Serial.print(unit.id); Serial.println("] Sensor detected.");
+      Serial.print("[BOOT] Unit ["); Serial.print(unit.id); Serial.println("] CONNECTED.");
     } else {
-      Serial.print("[BOOT] Unit ["); Serial.print(unit.id); Serial.println("] No sensor detected (Sensorless mode).");
+      Serial.print("[BOOT] Unit ["); Serial.print(unit.id); Serial.println("] NOT CONNECTED (OFFLINE).");
     }
   }
 
@@ -246,8 +245,11 @@ void reportAllWaterLevels() {
       int level = measureWaterLevel(unit, sensorOk);
       if (sensorOk) {
         sendWaterLevel(unit, level);
+      } else {
+        sendStatusUpdate(unit, "SENSOR_ERR");
       }
-      // إذا لم يكن الحساس موصلاً، لا نرسل تليمتري مياه لتجنب تصفير القراءة أو حدوث إيقاف طارئ تلقائي
+    } else {
+      sendStatusUpdate(unit, "OFFLINE");
     }
   }
 }
@@ -343,12 +345,14 @@ void handleUnitCommand(int idx, String command) {
     bool sensorOk = false;
     int waterLevel = measureWaterLevel(unit, sensorOk);
 
-    if (sensorOk && waterLevel < MIN_WATER_PERCENT) {
+    if (!sensorOk) {
+      Serial.print("[SAFETY] Sensor error on unit "); Serial.println(unit.id);
+      sendStatusUpdate(unit, "SENSOR_ERR");
+    } else if (waterLevel < MIN_WATER_PERCENT) {
       Serial.print("[SAFETY] Water too low on unit "); Serial.print(unit.id);
       Serial.print(": "); Serial.print(waterLevel); Serial.println("%");
       sendStatusUpdate(unit, "WATER_LOW");
     } else {
-      // يبدأ التنظيف إذا كان الحساس سليماً ومستوى المياه كافياً، أو إذا لم يكن هناك حساس موصل أصلاً (عمل بدون حساس)
       startCleaning(unit);
     }
   }
