@@ -5,8 +5,11 @@ import { AdminPanel } from './components/AdminPanel';
 import { HardwareTest } from './components/HardwareTest';
 
 export default function App() {
-  const [token, setToken] = useState<string | null>(null);
-  const [user, setUser] = useState<{ id: number; name: string; username: string; role?: string } | null>(null);
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('solar_clean_token'));
+  const [user, setUser] = useState<{ id: number; name: string; username: string; role?: string } | null>(() => {
+    const savedUser = localStorage.getItem('solar_clean_user');
+    return savedUser ? JSON.parse(savedUser) : null;
+  });
   const [currentHash, setCurrentHash] = useState<string>(window.location.hash || '#/login');
 
   // الاستماع لتغيرات مسار الصفحة (Hash Routing)
@@ -18,20 +21,13 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // التحقق من التوكن المحفوظ عند تحميل الصفحة لأول مرة
+  // التحقق من التوجيه عند تحميل الصفحة لأول مرة
   useEffect(() => {
-    const savedToken = localStorage.getItem('solar_clean_token');
-    const savedUser = localStorage.getItem('solar_clean_user');
-
-    if (savedToken && savedUser) {
-      const parsedUser = JSON.parse(savedUser);
-      setToken(savedToken);
-      setUser(parsedUser);
-      
+    if (token && user) {
       // التوجيه التلقائي للمسار الافتراضي بناءً على الدور إذا لم يكن هناك مسار محدد
       const current = window.location.hash;
       if (!current || current === '#/login' || current === '#/') {
-        if (parsedUser.role === 'ADMIN') {
+        if (user.role === 'ADMIN') {
           window.location.hash = '#/admin/overview';
         } else {
           window.location.hash = '#/dashboard';
@@ -40,7 +36,7 @@ export default function App() {
     } else {
       window.location.hash = '#/login';
     }
-  }, []);
+  }, [token, user]);
 
   const handleLoginSuccess = (newToken: string, loggedUser: any) => {
     setToken(newToken);
