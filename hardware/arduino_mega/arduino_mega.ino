@@ -73,7 +73,7 @@ const int TANK_FULL_DISTANCE            = 10;    // مسافة الخزان مم
 const int MIN_WATER_PERCENT             = 15;    // الحد الأدنى للماء لبدء التنظيف (%)
 const int MOTOR_SPEED                   = 50;    // سرعة المحركات الثابتة (0-255)
 const unsigned long MAX_CLEANING_TIME   = 20000; // حد الأمان الزمني بالمللي ثانية (20 ثانية)
-const unsigned long WATER_CHECK_INTERVAL= 60000; // فترة إرسال مستوى الماء (60 ثانية)
+const unsigned long WATER_CHECK_INTERVAL = 10000; // فترة إرسال مستوى الماء عند الاستعداد (10 ثوانٍ)
 
 // =================================================================
 //     تعريفات الحالة والهياكل البرمجية
@@ -228,7 +228,17 @@ void loop() {
 
   // 3. إرسال تقرير مستوى الماء لجميع الوحدات بشكل دوري
   unsigned long now = millis();
-  if (now - lastWaterCheck >= WATER_CHECK_INTERVAL) {
+  unsigned long currentInterval = WATER_CHECK_INTERVAL;
+
+  // إذا كانت أي وحدة قيد العمل أو الفحص، نقوم بتحديث مستوى المياه بسرعة أكبر (كل 3 ثوانٍ) لمتابعتها لحظياً
+  for (int i = 0; i < 4; i++) {
+    if (units[i].isInstalled && units[i].currentState != IDLE) {
+      currentInterval = 3000;
+      break;
+    }
+  }
+
+  if (now - lastWaterCheck >= currentInterval) {
     lastWaterCheck = now;
     reportAllWaterLevels();
   }
