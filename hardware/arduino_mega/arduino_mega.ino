@@ -60,10 +60,10 @@
 #define DEV4_IN3        51
 #define DEV4_IN4        52
 #define DEV4_TRIG       53
-#define DEV4_ECHO       A0   // المنافذ التناظرية كرقمية
-#define DEV4_L_START    A1
-#define DEV4_L_END      A2
-#define DEV4_PUMP       A3
+#define DEV4_ECHO       54   // المنافذ التناظرية كرقمية (A0 تعادل 54)
+#define DEV4_L_START    55   // (A1 تعادل 55)
+#define DEV4_L_END      56   // (A2 تعادل 56)
+#define DEV4_PUMP       57   // (A3 تعادل 57)
 
 // =================================================================
 //     إعدادات الأمان وقيم التحكم الثابتة
