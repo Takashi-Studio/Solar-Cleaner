@@ -5,9 +5,9 @@
 #include <PubSubClient.h>         // مكتبة الاتصال بـ MQTT
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
-#include <WiFiClientSecure.h>     // مكتبة الاتصال الآمن بـ HTTPS
+#include <WiFiClient.h>           // استخدام العميل العادي بدلاً من Secure لتقليل الحجم
 
-#define FIRMWARE_VERSION "1.1.2" // تنبيه: يجب رفع رقم الإصدار عند إجراء أي تعديل برميجي مستقبلي على هذا الكود
+#define FIRMWARE_VERSION "1.1.3" // تنبيه: يجب رفع رقم الإصدار عند إجراء أي تعديل برميجي مستقبلي على هذا الكود
 
 // تحديث سرعة الاتصال لتفادي تشويه البيانات (9600)
 // إعدادات افتراضية (يمكن تغييرها من خلال صفحة الإعدادات Captive Portal)
@@ -96,9 +96,8 @@ bool reconnectMQTTNonBlocking() {
   }
 }
 
-// دالة فحص وتثبيت التحديثات البرمجية لاسلكياً عبر السيرفر (OTA)
+// دالة فحص وتثبيت التحديثات البرمجية لاسلكياً عبر السيرفر (OTA) باستخدام HTTP لتقليل حجم الكود
 void checkOTAUpdate() {
-  // الانتظار حتى الحصول على عنوان IP صالح واستقرار الاتصال بالإنترنت
   int retries = 0;
   while (WiFi.status() != WL_CONNECTED || WiFi.localIP().toString() == "0.0.0.0") {
     delay(500);
@@ -109,15 +108,13 @@ void checkOTAUpdate() {
     }
   }
 
-  Serial.println("I:Checking for firmware updates...");
+  Serial.println("I:Checking for firmware updates (HTTP)...");
   
-  WiFiClientSecure otaClient;
-  otaClient.setInsecure(); // تجاهل التحقق من شهادة الـ SSL لتسهيل الاتصال بـ HTTPS
-  
+  WiFiClient otaClient;
   HTTPClient http;
   
-  // بناء الرابط لقراءة إصدار التحديث المتوفر على السيرفر (HTTPS)
-  String versionUrl = "https://api.solar.dev.takashi-studio.com/firmware/version.txt";
+  // الاتصال عبر HTTP العادي على المنفذ 5000 لتفادي تضمين مكتبات SSL/TLS الكبيرة في الذاكرة
+  String versionUrl = "http://161.97.152.98:5000/firmware/version.txt";
   
   if (http.begin(otaClient, versionUrl)) {
     int httpCode = http.GET();
@@ -130,8 +127,8 @@ void checkOTAUpdate() {
         Serial.print(latestVersion);
         Serial.println("] detected! Starting OTA Update...");
         
-        // بناء رابط تحميل كود التحديث البرمجي الجديد (HTTPS)
-        String binaryUrl = "https://api.solar.dev.takashi-studio.com/firmware/latest.bin";
+        // بناء رابط تحميل كود التحديث البرمجي الجديد عبر HTTP
+        String binaryUrl = "http://161.97.152.98:5000/firmware/latest.bin";
         
         // محاولة تحميل وتثبيت التحديث
         t_httpUpdate_return ret = ESPhttpUpdate.update(otaClient, binaryUrl);
