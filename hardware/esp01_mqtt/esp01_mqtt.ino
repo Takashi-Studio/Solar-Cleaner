@@ -7,7 +7,7 @@
 #include <ESP8266httpUpdate.h>
 #include <WiFiClientSecure.h>     // مكتبة الاتصال الآمن بـ HTTPS
 
-#define FIRMWARE_VERSION "1.1.1" // تنبيه: يجب رفع رقم الإصدار عند إجراء أي تعديل برميجي مستقبلي على هذا الكود
+#define FIRMWARE_VERSION "1.1.2" // تنبيه: يجب رفع رقم الإصدار عند إجراء أي تعديل برميجي مستقبلي على هذا الكود
 
 // تحديث سرعة الاتصال لتفادي تشويه البيانات (9600)
 // إعدادات افتراضية (يمكن تغييرها من خلال صفحة الإعدادات Captive Portal)
@@ -25,6 +25,10 @@ bool shouldSaveConfig = false;
 // متغيرات التحكم في توقيت إعادة اتصال MQTT بشكل غير حاصر
 unsigned long lastReconnectAttempt = 0;
 const unsigned long reconnectInterval = 5000; // حاول كل 5 ثوانٍ
+
+// متغيرات إرسال نبضات القلب (Heartbeat) بشكل دوري للحفاظ على حالة الاتصال بالخادم
+unsigned long lastHeartbeat = 0;
+const unsigned long heartbeatInterval = 30000; // كل 30 ثانية (أقل من الـ 90 ثانية في السيرفر)
 
 // متغيرات لتأجيل فحص التحديث التلقائي الأول بعد الإقلاع
 bool initialOTACheckDone = false;
@@ -257,6 +261,7 @@ void setup() {
   int port = atoi(mqtt_port);
   client.setServer(mqtt_server, port);
   client.setCallback(mqttCallback);
+  client.setKeepAlive(60); // زيادة وقت الحفاظ على الاتصال لتفادي انقطاعه عند انشغال المعالج ونقل البيانات
 
   Serial.print("I:Device ID: ");
   Serial.println(device_id);
@@ -278,6 +283,17 @@ void loop() {
       }
     } else {
       client.loop();
+      
+      // إرسال نبضة قلب دورية للحفاظ على حالة الاتصال (Online) في قاعدة البيانات وتفادي قطع الاتصال
+      unsigned long now = millis();
+      if (now - lastHeartbeat >= heartbeatInterval || lastHeartbeat == 0) {
+        lastHeartbeat = now;
+        String activeId = (current_controller_id.length() > 0) ? current_controller_id : String(device_id);
+        char topic_telemetry[60];
+        snprintf(topic_telemetry, sizeof(topic_telemetry), "controller/%s/telemetry", activeId.c_str());
+        String onlineMessage = "{\"controller\":\"" + activeId + "\",\"status\":\"online\"}";
+        client.publish(topic_telemetry, onlineMessage.c_str(), true);
+      }
     }
   }
 
