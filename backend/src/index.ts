@@ -363,6 +363,40 @@ app.post('/api/controllers/:controllerId/units/:unitId/stop', authenticateToken,
   }
 });
 
+// إرسال أمر اختبار فردي للقطع (المحرك يمين/يسار، المضخة)
+app.post('/api/controllers/:controllerId/units/:unitId/test', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const { controllerId, unitId } = req.params;
+  const { action } = req.body;
+
+  const validActions = ['TEST_FWD', 'TEST_BWD', 'TEST_PUMP', 'TEST_STOP', 'STOP'];
+  if (!action || !validActions.includes(action)) {
+    return res.status(400).json({ error: 'أمر اختبار غير صالح.' });
+  }
+
+  try {
+    const whereClause: any = { id: Number(unitId), controller_id: controllerId };
+    if (req.userRole !== 'ADMIN') {
+      whereClause.controller = { user_id: req.userId! };
+    }
+
+    const unit = await prisma.cleaningUnit.findFirst({
+      where: whereClause
+    });
+
+    if (!unit) return res.status(404).json({ error: 'الوحدة غير موجودة.' });
+    if (!unit.is_installed) return res.status(400).json({ error: 'الوحدة غير موصولة.' });
+
+    // إرسال الأمر المخصص لقطعة الهاردوير عبر MQTT
+    const payload = JSON.stringify({ cmd: action, port: unit.port_number });
+    mqttClient.publish(`controller/${controllerId}/commands`, payload);
+    console.log(`[MQTT] Test Command sent -> controller/${controllerId}/commands: ${payload}`);
+
+    res.json({ success: true, message: `تم إرسال أمر الفحص: ${action}` });
+  } catch (err) {
+    res.status(500).json({ error: 'Error sending test command' });
+  }
+});
+
 // =============================================================
 //  7. Schedules Endpoints
 // =============================================================

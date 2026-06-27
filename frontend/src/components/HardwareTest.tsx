@@ -47,18 +47,56 @@ export const HardwareTest: React.FC<HardwareTestProps> = ({ token, user, onNavig
     fetchControllers();
   }, [token, user.role]);
 
-  const sendTestCommand = (unitId: number, commandName: string, durationMs: number = 3000) => {
-    setActiveActions(prev => ({ ...prev, [unitId]: commandName }));
+  const sendTestCommand = async (controllerId: string, unitId: number, action: string, durationMs: number = 5000) => {
+    setActiveActions(prev => ({ ...prev, [unitId]: action }));
     
-    setTimeout(() => {
+    try {
+      const res = await fetch(`${API_URL}/api/controllers/${controllerId}/units/${unitId}/test`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ action })
+      });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        alert(errorData.error || 'فشل إرسال الأمر للقطعة.');
+        setActiveActions(prev => {
+          const newState = { ...prev };
+          delete newState[unitId];
+          return newState;
+        });
+      } else {
+        if (action === 'TEST_STOP' || action === 'STOP') {
+          setActiveActions(prev => {
+            const newState = { ...prev };
+            delete newState[unitId];
+            return newState;
+          });
+        } else {
+          // إلغاء تفعيل الحركة تلقائياً بعد انقضاء الوقت لتحديث الواجهة
+          setTimeout(() => {
+            setActiveActions(prev => {
+              const newState = { ...prev };
+              if (newState[unitId] === action) {
+                delete newState[unitId];
+              }
+              return newState;
+            });
+          }, durationMs);
+        }
+      }
+    } catch (err) {
+      console.error('Error sending test command:', err);
+      alert('حدث خطأ في الاتصال بالسيرفر.');
       setActiveActions(prev => {
         const newState = { ...prev };
-        if (newState[unitId] === commandName) {
-          delete newState[unitId];
-        }
+        delete newState[unitId];
         return newState;
       });
-    }, durationMs);
+    }
   };
 
   return (
@@ -75,7 +113,7 @@ export const HardwareTest: React.FC<HardwareTestProps> = ({ token, user, onNavig
             <Zap size={20} className="text-amber-400" />
             اختبار القطع الفردية (Hardware Test)
           </h1>
-          <p className="text-[11px] text-slate-500 mt-0.5">شاشة محاكاة لاختبار المحركات والمضخات بشكل فردي (للعرض التقديمي)</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">شاشة اختبار المحركات والمضخات بشكل فردي ومباشر</p>
         </div>
       </header>
 
@@ -83,11 +121,11 @@ export const HardwareTest: React.FC<HardwareTestProps> = ({ token, user, onNavig
         <div className="glass-panel rounded-2xl p-4 border border-cyan-500/20 bg-cyan-950/10 flex items-start gap-3">
           <Info size={20} className="text-cyan-400 shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-bold text-cyan-400">وضع الاختبار المباشر</p>
+            <p className="text-sm font-bold text-cyan-400">وضع الاختبار المباشر والفعلي</p>
             <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-              تتيح لك هذه الواجهة اختبار كل قطعة على حدى (محرك يمين، يسار، مضخة ماء) دون تفعيل دورة التنظيف الكاملة. 
+              تتيح لك هذه الواجهة اختبار كل قطعة على حدة (محرك يمين، يسار، مضخة ماء) بشكل مباشر. 
               <br/>
-              <span className="text-amber-500">ملاحظة:</span> هذه الواجهة تعمل حالياً في وضع المحاكاة (Simulation Mode) لتوضيح الفكرة دون إرسال أوامر حقيقية للأردوينو لتجنب تعارض الكود.
+              <span className="text-emerald-400">تنبيه:</span> الأوامر يتم إرسالها الآن بشكل حقيقي وفعلي للمتحكم عبر الشبكة لتشغيل القطع الموصولة حالياً.
             </p>
           </div>
         </div>
@@ -125,53 +163,53 @@ export const HardwareTest: React.FC<HardwareTestProps> = ({ token, user, onNavig
                           
                           <div className="grid grid-cols-2 gap-3">
                             <button 
-                              onClick={() => sendTestCommand(unit.id, 'FWD', 5000)}
-                              disabled={!!activeAction && activeAction !== 'FWD'}
+                              onClick={() => sendTestCommand(ctrl.id, unit.id, 'TEST_FWD', 5000)}
+                              disabled={!!activeAction && activeAction !== 'TEST_FWD'}
                               className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-all ${
-                                activeAction === 'FWD' 
+                                activeAction === 'TEST_FWD' 
                                   ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.2)]' 
                                   : 'bg-slate-900/50 border-slate-700 text-slate-300 hover:bg-slate-800 hover:border-slate-600 disabled:opacity-50'
                               }`}
                             >
-                              <ArrowRight size={20} className={activeAction === 'FWD' ? 'animate-pulse' : ''} />
+                              <ArrowRight size={20} className={activeAction === 'TEST_FWD' ? 'animate-pulse' : ''} />
                               <span className="text-xs font-bold">محرك (يمين)</span>
                             </button>
 
                             <button 
-                              onClick={() => sendTestCommand(unit.id, 'BWD', 5000)}
-                              disabled={!!activeAction && activeAction !== 'BWD'}
+                              onClick={() => sendTestCommand(ctrl.id, unit.id, 'TEST_BWD', 5000)}
+                              disabled={!!activeAction && activeAction !== 'TEST_BWD'}
                               className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-all ${
-                                activeAction === 'BWD' 
+                                activeAction === 'TEST_BWD' 
                                   ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.2)]' 
                                   : 'bg-slate-900/50 border-slate-700 text-slate-300 hover:bg-slate-800 hover:border-slate-600 disabled:opacity-50'
                               }`}
                             >
-                              <ArrowLeft size={20} className={activeAction === 'BWD' ? 'animate-pulse' : ''} />
+                              <ArrowLeft size={20} className={activeAction === 'TEST_BWD' ? 'animate-pulse' : ''} />
                               <span className="text-xs font-bold">محرك (يسار)</span>
                             </button>
 
                             <button 
-                              onClick={() => sendTestCommand(unit.id, 'PUMP', 3000)}
-                              disabled={!!activeAction && activeAction !== 'PUMP'}
+                              onClick={() => sendTestCommand(ctrl.id, unit.id, 'TEST_PUMP', 5000)}
+                              disabled={!!activeAction && activeAction !== 'TEST_PUMP'}
                               className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-all ${
-                                activeAction === 'PUMP' 
+                                activeAction === 'TEST_PUMP' 
                                   ? 'bg-blue-500/20 border-blue-500 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.2)]' 
                                   : 'bg-slate-900/50 border-slate-700 text-slate-300 hover:bg-slate-800 hover:border-slate-600 disabled:opacity-50'
                               }`}
                             >
-                              <Droplets size={20} className={activeAction === 'PUMP' ? 'animate-bounce' : ''} />
+                              <Droplets size={20} className={activeAction === 'TEST_PUMP' ? 'animate-bounce' : ''} />
                               <span className="text-xs font-bold">رش ماء (مضخة)</span>
                             </button>
 
                             <button 
-                              onClick={() => sendTestCommand(unit.id, 'STOP', 1000)}
+                              onClick={() => sendTestCommand(ctrl.id, unit.id, 'TEST_STOP', 1000)}
                               className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-all ${
-                                activeAction === 'STOP' 
+                                activeAction === 'TEST_STOP' 
                                   ? 'bg-red-500/20 border-red-500 text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.2)]' 
                                   : 'bg-slate-900/50 border-slate-700/50 text-red-400/80 hover:bg-red-950/30 hover:border-red-500/50 hover:text-red-400'
                               }`}
                             >
-                              <Square size={20} className={activeAction === 'STOP' ? 'animate-pulse' : ''} />
+                              <Square size={20} className={activeAction === 'TEST_STOP' ? 'animate-pulse' : ''} />
                               <span className="text-xs font-bold">إيقاف المحركات</span>
                             </button>
                           </div>

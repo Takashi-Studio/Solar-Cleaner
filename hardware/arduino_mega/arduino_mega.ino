@@ -380,6 +380,39 @@ void handleUnitCommand(int idx, String command) {
     unit.gracefulStop = true;
     sendStatusUpdate(unit, "RETURNING_HOME");
   }
+  else if (command == "TEST_FWD") {
+    // تشغيل المحرك للأمام بشكل فردي للفحص مع تفعيل أمان نهاية المسار
+    stopUnitEverything(unit);
+    moveForward(unit);
+    unit.movementStartTime = millis();
+    unit.currentState = MOVING_FORWARD;
+    sendStatusUpdate(unit, "CLEANING");
+    Serial.print("[TEST] Unit "); Serial.print(unit.id); Serial.println(" -> Test Forward started.");
+  }
+  else if (command == "TEST_BWD") {
+    // تشغيل المحرك للخلف بشكل فردي للفحص مع تفعيل أمان بداية المسار
+    stopUnitEverything(unit);
+    moveBackward(unit);
+    unit.movementStartTime = millis();
+    unit.currentState = MOVING_BACKWARD;
+    sendStatusUpdate(unit, "RETURNING_HOME");
+    Serial.print("[TEST] Unit "); Serial.print(unit.id); Serial.println(" -> Test Backward started.");
+  }
+  else if (command == "TEST_PUMP") {
+    // تشغيل المضخة بشكل فردي للفحص
+    stopUnitEverything(unit);
+    digitalWrite(unit.pinPumpRelay, LOW); // تشغيل ريلاي المضخة (Active-Low)
+    unit.currentState = IDLE;
+    sendStatusUpdate(unit, "TESTING_PUMP");
+    Serial.print("[TEST] Unit "); Serial.print(unit.id); Serial.println(" -> Test Pump started.");
+  }
+  else if (command == "TEST_STOP" || command == "STOP") {
+    // إيقاف كل شيء وإرجاع الوحدة لحالة الاستعداد
+    stopUnitEverything(unit);
+    unit.currentState = IDLE;
+    sendStatusUpdate(unit, "IDLE");
+    Serial.print("[TEST] Unit "); Serial.print(unit.id); Serial.println(" -> Test Stop (Everything Off).");
+  }
   else {
     Serial.print("[CMD] Unknown command: "); Serial.println(command);
   }
