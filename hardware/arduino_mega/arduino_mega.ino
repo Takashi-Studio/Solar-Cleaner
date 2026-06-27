@@ -200,15 +200,16 @@ void setup() {
     pinMode(unit.pinLimitStart, INPUT_PULLUP);
     pinMode(unit.pinLimitEnd,   INPUT_PULLUP);
 
-    // الكشف التلقائي عن الوحدة بقراءة الحساس (Plug & Play)
+    // نفترض دائماً أن الوحدات مثبتة لتمكين التحكم بها حتى بدون وجود حساسات مائية
+    unit.isInstalled = true;
+
     bool sensorOk = false;
     measureWaterLevel(unit, sensorOk);
-    unit.isInstalled = sensorOk;
 
     if (sensorOk) {
-      Serial.print("[BOOT] Unit ["); Serial.print(unit.id); Serial.println("] CONNECTED.");
+      Serial.print("[BOOT] Unit ["); Serial.print(unit.id); Serial.println("] Sensor detected.");
     } else {
-      Serial.print("[BOOT] Unit ["); Serial.print(unit.id); Serial.println("] NOT CONNECTED (OFFLINE).");
+      Serial.print("[BOOT] Unit ["); Serial.print(unit.id); Serial.println("] No sensor detected (Sensorless mode).");
     }
   }
 
@@ -245,11 +246,8 @@ void reportAllWaterLevels() {
       int level = measureWaterLevel(unit, sensorOk);
       if (sensorOk) {
         sendWaterLevel(unit, level);
-      } else {
-        sendStatusUpdate(unit, "SENSOR_ERR");
       }
-    } else {
-      sendStatusUpdate(unit, "OFFLINE");
+      // إذا لم يكن الحساس موصلاً، لا نرسل تليمتري مياه لتجنب تصفير القراءة أو حدوث إيقاف طارئ تلقائي
     }
   }
 }
@@ -297,18 +295,31 @@ void processCommand(String incoming) {
   int cmdStart = incoming.indexOf("\"cmd\":\"") + 7;
   int cmdEnd   = incoming.indexOf("\"", cmdStart);
 
+  if (cmdStart < 7 || cmdEnd <= cmdStart) {
+    Serial.println("[CMD] Invalid or unrecognized JSON format. Ignored.");
+    return;
+  }
+
+  String command = incoming.substring(cmdStart, cmdEnd);
+
+  // أمر طلب تقرير الإقلاع والمزامنة من قطعة الواي فاي
+  if (command == "GET_BOOT") {
+    Serial.println("[CMD] Resending boot report...");
+    sendBootReport();
+    return;
+  }
+
   // استخراج قيمة "port"
   int portStart = incoming.indexOf("\"port\":") + 7;
   // نقرأ حتى أول حرف غير رقمي
   int portEnd = portStart;
   while (portEnd < (int)incoming.length() && isDigit(incoming.charAt(portEnd))) portEnd++;
 
-  if (cmdStart < 7 || portStart < 7 || cmdEnd <= cmdStart || portEnd <= portStart) {
-    Serial.println("[CMD] Invalid or unrecognized JSON format. Ignored.");
+  if (portStart < 7 || portEnd <= portStart) {
+    Serial.println("[CMD] Port number missing. Ignored.");
     return;
   }
 
-  String command = incoming.substring(cmdStart, cmdEnd);
   int    port    = incoming.substring(portStart, portEnd).toInt();
 
   if (port < 1 || port > 4) {
@@ -332,14 +343,12 @@ void handleUnitCommand(int idx, String command) {
     bool sensorOk = false;
     int waterLevel = measureWaterLevel(unit, sensorOk);
 
-    if (!sensorOk) {
-      Serial.print("[SAFETY] Sensor error on unit "); Serial.println(unit.id);
-      sendStatusUpdate(unit, "SENSOR_ERR");
-    } else if (waterLevel < MIN_WATER_PERCENT) {
+    if (sensorOk && waterLevel < MIN_WATER_PERCENT) {
       Serial.print("[SAFETY] Water too low on unit "); Serial.print(unit.id);
       Serial.print(": "); Serial.print(waterLevel); Serial.println("%");
       sendStatusUpdate(unit, "WATER_LOW");
     } else {
+      // يبدأ التنظيف إذا كان الحساس سليماً ومستوى المياه كافياً، أو إذا لم يكن هناك حساس موصل أصلاً (عمل بدون حساس)
       startCleaning(unit);
     }
   }

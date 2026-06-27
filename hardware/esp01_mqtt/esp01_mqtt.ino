@@ -7,7 +7,7 @@
 #include <ESP8266httpUpdate.h>
 #include <WiFiClient.h>           // استخدام العميل العادي بدلاً من Secure لتقليل الحجم
 
-#define FIRMWARE_VERSION "1.1.4" // تنبيه: يجب رفع رقم الإصدار عند إجراء أي تعديل برميجي مستقبلي على هذا الكود
+#define FIRMWARE_VERSION "1.1.5" // تنبيه: يجب رفع رقم الإصدار عند إجراء أي تعديل برميجي مستقبلي على هذا الكود
 
 // تحديث سرعة الاتصال لتفادي تشويه البيانات (9600)
 // إعدادات افتراضية (يمكن تغييرها من خلال صفحة الإعدادات Captive Portal)
@@ -78,6 +78,9 @@ bool reconnectMQTTNonBlocking() {
   
   if (client.connect(device_id, device_id, NULL, topic_telemetry, 1, true, willMessage.c_str())) {
     Serial.println("I:MQTT Connected");
+    
+    // اطلب من الأردوينو ميقا إعادة إرسال تقرير الإقلاع لمزامنة حالة الوحدات المثبتة فوراً
+    Serial.println("{\"cmd\":\"GET_BOOT\"}");
     
     char topic_commands[60];
     snprintf(topic_commands, sizeof(topic_commands), "controller/%s/commands", device_id);
