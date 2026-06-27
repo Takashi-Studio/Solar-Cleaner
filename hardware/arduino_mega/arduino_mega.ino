@@ -233,6 +233,9 @@ void loop() {
   // 2. تحديث حركة المحركات لجميع الوحدات النشطة بالتوازي
   updateMotors();
 
+  // 2.5. فحص وطباعة حالة السوتشات للتأكد من التوصيل في شاشة المراقبة
+  debugLimitSwitches();
+
   // 3. إرسال تقرير مستوى الماء لجميع الوحدات بشكل دوري
   unsigned long now = millis();
   unsigned long currentInterval = WATER_CHECK_INTERVAL;
@@ -265,8 +268,43 @@ void reportAllWaterLevels() {
       } else {
         sendStatusUpdate(unit, "SENSOR_ERR");
       }
-    } else {
-      sendStatusUpdate(unit, "OFFLINE");
+    }
+  }
+}
+
+// فحص حالة مفاتيح نهاية وبداية المشوار وطباعة تقرير للتأكد منها في شاشة المراقبة عند الضغط
+void debugLimitSwitches() {
+  static unsigned long lastDebugTime = 0;
+  static bool lastStartPressed[4] = {false, false, false, false};
+  static bool lastEndPressed[4] = {false, false, false, false};
+  
+  unsigned long now = millis();
+  if (now - lastDebugTime < 100) return; // فحص كل 100 مللي ثانية
+  lastDebugTime = now;
+
+  for (int i = 0; i < 4; i++) {
+    CleaningUnit &unit = units[i];
+    if (!unit.isInstalled) continue;
+
+    bool startPressed = (digitalRead(unit.pinLimitStart) == LOW);
+    bool endPressed = (digitalRead(unit.pinLimitEnd) == LOW);
+
+    if (startPressed != lastStartPressed[i]) {
+      lastStartPressed[i] = startPressed;
+      if (startPressed) {
+        Serial.print("[DEBUG SWITCH] Unit "); Serial.print(unit.id); Serial.println(" -> START Limit Switch PRESSED! (LOW)");
+      } else {
+        Serial.print("[DEBUG SWITCH] Unit "); Serial.print(unit.id); Serial.println(" -> START Limit Switch RELEASED! (HIGH)");
+      }
+    }
+
+    if (endPressed != lastEndPressed[i]) {
+      lastEndPressed[i] = endPressed;
+      if (endPressed) {
+        Serial.print("[DEBUG SWITCH] Unit "); Serial.print(unit.id); Serial.println(" -> END Limit Switch PRESSED! (LOW)");
+      } else {
+        Serial.print("[DEBUG SWITCH] Unit "); Serial.print(unit.id); Serial.println(" -> END Limit Switch RELEASED! (HIGH)");
+      }
     }
   }
 }
