@@ -486,8 +486,8 @@ void updateMotors() {
       }
     }
     else if (unit.currentState == MOVING_FORWARD) {
-      // 3. الحركة للأمام حتى نهاية الشوط
-      if (digitalRead(unit.pinLimitEnd) == LOW) {
+      // 3. الحركة للأمام حتى نهاية الشوط (تجاهل أول ثانيتين لتفادي التشويش الكهربائي)
+      if (now - unit.movementStartTime >= 2000 && digitalRead(unit.pinLimitEnd) == LOW) {
         moveBackward(unit); // الرجوع للخلف
         unit.movementStartTime = now;
         unit.currentState = MOVING_BACKWARD;
@@ -501,8 +501,8 @@ void updateMotors() {
       }
     }
     else if (unit.currentState == MOVING_BACKWARD) {
-      // 4. الحركة للخلف حتى بداية الشوط
-      if (digitalRead(unit.pinLimitStart) == LOW) {
+      // 4. الحركة للخلف حتى بداية الشوط (تجاهل أول ثانيتين لتفادي التشويش الكهربائي)
+      if (now - unit.movementStartTime >= 2000 && digitalRead(unit.pinLimitStart) == LOW) {
         stopUnitMotors(unit);
         
         if (unit.gracefulStop) {

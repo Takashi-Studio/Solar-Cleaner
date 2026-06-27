@@ -155,9 +155,15 @@ mqttClient.on('message', async (topic, message) => {
       });
       if (!unit) return;
 
+      // إصلاح الحالة تلقائياً لـ IDLE إذا استلمنا قراءة صحيحة بينما كانت الحالة تظهر خطأ أو غير متصل
+      const shouldHealState = unit.state === 'OFFLINE' || unit.state === 'SENSOR_ERR';
+
       await prisma.cleaningUnit.update({
         where: { id: unit.id },
-        data: { water_level: Number(payload.level) }
+        data: { 
+          water_level: Number(payload.level),
+          ...(shouldHealState ? { state: 'IDLE' } : {})
+        }
       });
 
       // ⚠️ إيقاف طارئ تلقائي إذا انخفض الماء أثناء التنظيف
