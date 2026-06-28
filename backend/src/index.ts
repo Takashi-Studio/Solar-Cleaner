@@ -155,14 +155,16 @@ mqttClient.on('message', async (topic, message) => {
       });
       if (!unit) return;
 
-      // إصلاح الحالة تلقائياً لـ IDLE إذا استلمنا قراءة صحيحة بينما كانت الحالة تظهر خطأ أو غير متصل
+      // إصلاح الحالة تلقائياً لـ IDLE وتفعيل التثبيت إذا استلمنا قراءة مياه صحيحة
       const shouldHealState = unit.state === 'OFFLINE' || unit.state === 'SENSOR_ERR';
+      const shouldHealInstalled = !unit.is_installed;
 
       await prisma.cleaningUnit.update({
         where: { id: unit.id },
         data: { 
           water_level: Number(payload.level),
-          ...(shouldHealState ? { state: 'IDLE' } : {})
+          ...(shouldHealState ? { state: 'IDLE' } : {}),
+          ...(shouldHealInstalled ? { is_installed: true } : {})
         }
       });
 
@@ -766,10 +768,28 @@ app.delete('/api/admin/units/:unitId', authenticateToken, requireAdmin, async (r
 cron.schedule('* * * * *', async () => {
   try {
     const now = new Date();
-    const currentTime = now.toTimeString().substring(0, 5);
-    const currentDay = String(now.getDay());
-    const currentDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
-      .toISOString().split('T')[0];
+    
+    // الحصول على الوقت والتاريخ واليوم في توقيت الرياض (Asia/Riyadh) لتفادي فروقات السيرفر السحابي (مثل UTC)
+    const riyadhFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Riyadh',
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    const parts = riyadhFormatter.formatToParts(now);
+    const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+    
+    const currentTime = `${partMap.hour}:${partMap.minute}`;
+    const currentDate = `${partMap.year}-${partMap.month}-${partMap.day}`;
+
+    // حساب رقم اليوم (0 = الأحد، 6 = السبت) بتوقيت الرياض
+    const dayFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Riyadh', weekday: 'short' });
+    const dayName = dayFormatter.format(now);
+    const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const currentDay = String(daysOfWeek.indexOf(dayName));
 
     const schedules = await prisma.schedule.findMany({
       where: { is_active: 1 },
