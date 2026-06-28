@@ -793,9 +793,12 @@ cron.schedule('* * * * *', async () => {
       } else {
         const days = s.days_of_week ? s.days_of_week.split(',') : [];
         if (s.cleaning_time === currentTime && days.includes(currentDay)) {
-          const msInWeek = 7 * 24 * 60 * 60 * 1000;
-          const diff = Math.floor((now.getTime() - new Date(s.created_at).getTime()) / msInWeek);
-          shouldRun = diff % s.interval_weeks === 0;
+          // حساب فارق الأسابيع بناءً على تاريخ الأيام الفعلي لتفادي فروقات الثواني والمنطقة الزمنية
+          const currentDateStr = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+          const createdDateStr = new Date(new Date(s.created_at).getTime() - new Date(s.created_at).getTimezoneOffset() * 60000).toISOString().split('T')[0];
+          const dateDiffInDays = Math.round((new Date(currentDateStr).getTime() - new Date(createdDateStr).getTime()) / (24 * 60 * 60 * 1000));
+          const diffWeeks = Math.round(dateDiffInDays / 7);
+          shouldRun = diffWeeks % s.interval_weeks === 0;
         }
       }
 
